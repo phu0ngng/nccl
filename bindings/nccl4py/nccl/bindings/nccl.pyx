@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-# This code was automatically generated with version 2.28.0. Do not modify it directly.
+# This code was automatically generated with version 2.30.0. Do not modify it directly.
 
 cimport cython  # NOQA
 from libcpp.vector cimport vector
@@ -2455,8 +2455,8 @@ cdef class TeamRequirements:
 cdef _get_dev_comm_dtype_offsets():
     cdef ncclDevComm_t pod = ncclDevComm_t()
     return _numpy.dtype({
-        'names': ['rank', 'n_ranks', 'n_ranks_rcp32', 'lsa_rank', 'lsa_size', 'lsa_size_rcp32', 'window_table', 'resource_window', 'resource_window_inlined', 'lsa_multimem', 'lsa_barrier', 'rail_gin_barrier', 'gin_connection_count', 'gin_net_device_types', 'gin_handles', 'gin_signal_base', 'gin_signal_count', 'gin_counter_base', 'gin_counter_count', 'gin_signal_shadows', 'gin_context_count', 'gin_context_base', 'gin_is_railed', 'abort_flag', 'hybrid_lsa_barrier', 'hybrid_rail_gin_barrier'],
-        'formats': [_numpy.int32, _numpy.int32, _numpy.uint32, _numpy.int32, _numpy.int32, _numpy.uint32, _numpy.intp, _numpy.intp, window_vidmem_dtype, multimem_handle_dtype, lsa_barrier_handle_dtype, gin_barrier_handle_dtype, _numpy.uint8, (_numpy.uint8, 4), (_numpy.int64, 4), _numpy.uint32, _numpy.int32, _numpy.uint32, _numpy.int32, _numpy.intp, _numpy.uint32, _numpy.uint32, _numpy.uint8, _numpy.intp, lsa_barrier_handle_dtype, gin_barrier_handle_dtype],
+        'names': ['rank', 'n_ranks', 'n_ranks_rcp32', 'lsa_rank', 'lsa_size', 'lsa_size_rcp32', 'window_table', 'resource_window', 'resource_window_inlined', 'lsa_multimem', 'lsa_barrier', 'rail_gin_barrier', 'gin_connection_count', 'gin_net_device_types', 'gin_handles', 'gin_signal_base', 'gin_signal_count', 'gin_counter_base', 'gin_counter_count', 'gin_signal_shadows', 'gin_context_count', 'gin_context_base', 'gin_is_railed', 'abort_flag', 'hybrid_lsa_barrier', 'hybrid_rail_gin_barrier', 'world_gin_barrier'],
+        'formats': [_numpy.int32, _numpy.int32, _numpy.uint32, _numpy.int32, _numpy.int32, _numpy.uint32, _numpy.intp, _numpy.intp, window_vidmem_dtype, multimem_handle_dtype, lsa_barrier_handle_dtype, gin_barrier_handle_dtype, _numpy.uint8, (_numpy.uint8, 4), (_numpy.int64, 4), _numpy.uint32, _numpy.int32, _numpy.uint32, _numpy.int32, _numpy.intp, _numpy.uint32, _numpy.uint32, _numpy.uint8, _numpy.intp, lsa_barrier_handle_dtype, gin_barrier_handle_dtype, gin_barrier_handle_dtype],
         'offsets': [
             (<intptr_t>&(pod.rank)) - (<intptr_t>&pod),
             (<intptr_t>&(pod.nRanks)) - (<intptr_t>&pod),
@@ -2484,6 +2484,7 @@ cdef _get_dev_comm_dtype_offsets():
             (<intptr_t>&(pod.abortFlag)) - (<intptr_t>&pod),
             (<intptr_t>&(pod.hybridLsaBarrier)) - (<intptr_t>&pod),
             (<intptr_t>&(pod.hybridRailGinBarrier)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.worldGinBarrier)) - (<intptr_t>&pod),
         ],
         'itemsize': sizeof(ncclDevComm_t),
     })
@@ -2629,6 +2630,18 @@ cdef class DevComm:
             raise ValueError("This DevComm instance is read-only")
         cdef GinBarrierHandle val_ = val
         memcpy(<void *>&(self._ptr[0].hybridRailGinBarrier), <void *>(val_._get_ptr()), sizeof(ncclGinBarrierHandle_t) * 1)
+
+    @property
+    def world_gin_barrier(self):
+        """GinBarrierHandle: """
+        return GinBarrierHandle.from_ptr(<intptr_t>&(self._ptr[0].worldGinBarrier), self._readonly, self)
+
+    @world_gin_barrier.setter
+    def world_gin_barrier(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        cdef GinBarrierHandle val_ = val
+        memcpy(<void *>&(self._ptr[0].worldGinBarrier), <void *>(val_._get_ptr()), sizeof(ncclGinBarrierHandle_t) * 1)
 
     @property
     def rank(self):
@@ -2909,8 +2922,8 @@ cdef class DevComm:
 cdef _get_dev_comm_requirements_dtype_offsets():
     cdef ncclDevCommRequirements_t pod = ncclDevCommRequirements_t()
     return _numpy.dtype({
-        'names': ['size_', 'magic', 'version', 'resource_requirements_list', 'team_requirements_list', 'lsa_multimem', 'barrier_count', 'lsa_barrier_count', 'rail_gin_barrier_count', 'lsa_ll_a2a_block_count', 'lsa_ll_a2a_slot_count', 'gin_force_enable', 'gin_context_count', 'gin_signal_count', 'gin_counter_count', 'gin_connection_type', 'gin_exclusive_contexts', 'gin_queue_depth'],
-        'formats': [_numpy.uint64, _numpy.uint32, _numpy.uint32, _numpy.intp, _numpy.intp, _numpy.uint8, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.uint8, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.uint8, _numpy.int32],
+        'names': ['size_', 'magic', 'version', 'resource_requirements_list', 'team_requirements_list', 'lsa_multimem', 'barrier_count', 'lsa_barrier_count', 'rail_gin_barrier_count', 'lsa_ll_a2a_block_count', 'lsa_ll_a2a_slot_count', 'gin_force_enable', 'gin_context_count', 'gin_signal_count', 'gin_counter_count', 'gin_connection_type', 'gin_exclusive_contexts', 'gin_queue_depth', 'world_gin_barrier_count'],
+        'formats': [_numpy.uint64, _numpy.uint32, _numpy.uint32, _numpy.intp, _numpy.intp, _numpy.uint8, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.uint8, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.uint8, _numpy.int32, _numpy.int32],
         'offsets': [
             (<intptr_t>&(pod.size)) - (<intptr_t>&pod),
             (<intptr_t>&(pod.magic)) - (<intptr_t>&pod),
@@ -2930,6 +2943,7 @@ cdef _get_dev_comm_requirements_dtype_offsets():
             (<intptr_t>&(pod.ginConnectionType)) - (<intptr_t>&pod),
             (<intptr_t>&(pod.ginExclusiveContexts)) - (<intptr_t>&pod),
             (<intptr_t>&(pod.ginQueueDepth)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.worldGinBarrierCount)) - (<intptr_t>&pod),
         ],
         'itemsize': sizeof(ncclDevCommRequirements_t),
     })
@@ -3201,6 +3215,17 @@ cdef class DevCommRequirements:
         if self._readonly:
             raise ValueError("This DevCommRequirements instance is read-only")
         self._ptr[0].ginQueueDepth = val
+
+    @property
+    def world_gin_barrier_count(self):
+        """int: """
+        return self._ptr[0].worldGinBarrierCount
+
+    @world_gin_barrier_count.setter
+    def world_gin_barrier_count(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].worldGinBarrierCount = val
 
     def __getstate__(self):
         raise pickle.PicklingError("Pickle not supported for DevCommRequirements")

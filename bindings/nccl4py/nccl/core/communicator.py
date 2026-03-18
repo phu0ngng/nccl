@@ -586,6 +586,7 @@ class NCCLDevCommRequirements:
         gin_connection_type: NcclGinConnectionType = NcclGinConnectionType.NONE,
         gin_exclusive_contexts: bool = False,
         gin_queue_depth: int = 0,
+        world_gin_barrier_count: int = 0,
     ) -> None:
         """
         Initializes NCCL device communicator requirements.
@@ -606,6 +607,7 @@ class NCCLDevCommRequirements:
             gin_connection_type: GIN connection type. Default: NcclGinConnectionType.NONE.
             gin_exclusive_contexts: Use exclusive GIN contexts. Default: False.
             gin_queue_depth: GIN queue depth. Default: 0.
+            world_gin_barrier_count: Number of world GIN barriers. Default: 0.
         """
         # Initialize the low-level binding object
         self._reqs = _nccl_bindings.DevCommRequirements()
@@ -633,6 +635,7 @@ class NCCLDevCommRequirements:
         self.gin_connection_type = gin_connection_type
         self.gin_exclusive_contexts = gin_exclusive_contexts
         self.gin_queue_depth = gin_queue_depth
+        self.world_gin_barrier_count = world_gin_barrier_count
 
     @property
     def lsa_multimem(self) -> bool:
@@ -752,6 +755,15 @@ class NCCLDevCommRequirements:
         self._reqs.gin_queue_depth = value
 
     @property
+    def world_gin_barrier_count(self) -> int:
+        """Number of world GIN barriers."""
+        return self._reqs.world_gin_barrier_count
+
+    @world_gin_barrier_count.setter
+    def world_gin_barrier_count(self, value: int) -> None:
+        self._reqs.world_gin_barrier_count = value
+
+    @property
     def ptr(self) -> int:
         """
         Pointer to the underlying ncclDevCommRequirements_t structure.
@@ -798,6 +810,8 @@ class NCCLDevCommRequirements:
             parts.append(f"gin_exclusive_contexts={self.gin_exclusive_contexts}")
         if self.gin_queue_depth != 0:
             parts.append(f"gin_queue_depth={self.gin_queue_depth}")
+        if self.world_gin_barrier_count != 0:
+            parts.append(f"world_gin_barrier_count={self.world_gin_barrier_count}")
 
         if parts:
             return f"<NCCLDevCommRequirements: {', '.join(parts)}>"

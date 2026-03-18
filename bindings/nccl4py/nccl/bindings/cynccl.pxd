@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-# This code was automatically generated with version 2.28.0. Do not modify it directly.
+# This code was automatically generated with version 2.30.0. Do not modify it directly.
 
 
 from libc.stdint cimport int64_t, uint8_t, uint32_t, uint64_t
@@ -216,6 +216,7 @@ ctypedef struct ncclDevComm_t 'ncclDevComm_t':
     uint32_t* abortFlag
     ncclLsaBarrierHandle_t hybridLsaBarrier
     ncclGinBarrierHandle_t hybridRailGinBarrier
+    ncclGinBarrierHandle_t worldGinBarrier
 
 ctypedef struct ncclDevCommRequirements_t 'ncclDevCommRequirements_t':
     size_t size
@@ -236,6 +237,7 @@ ctypedef struct ncclDevCommRequirements_t 'ncclDevCommRequirements_t':
     ncclGinConnectionType_t ginConnectionType
     uint8_t ginExclusiveContexts
     int ginQueueDepth
+    int worldGinBarrierCount
 
 
 

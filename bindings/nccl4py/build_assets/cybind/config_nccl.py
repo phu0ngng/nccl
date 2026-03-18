@@ -7,7 +7,7 @@
                 # This is kind of a hack to make Cybind work
                 # Call whatever is NOT "0.0.0" to avoid interfering with
                 # other versions in Cybind's nccl dir
-                ('2.28.0', ),
+                ('2.30.0', ),
             ],
             # first one is the master header, the rest is for assisting parsing
             'headers': ['nccl_device_expanded.h'],
