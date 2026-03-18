@@ -536,25 +536,26 @@ class NCCLConfig:
 
 @dataclass(frozen=True, slots=True)
 class WaitSignalDesc:
-    """
-    Descriptor for wait signal operations in NCCL.
+    """Descriptor for wait signal operations in NCCL.
 
     This class describes a signal wait operation for use with :meth:`Communicator.wait_signal`.
     Each descriptor specifies which peer to wait for, how many signal operations to wait for,
     and additional context for the wait operation.
+
+    Attributes:
+        peer: Target peer rank to wait for signals from.
+        op_count: Number of signal operations to wait for from the peer. Defaults to 1.
+        signal_index: Signal index identifier. Currently must be 0.
+        context: Context identifier. Currently must be 0.
 
     See Also:
         :meth:`Communicator.wait_signal`: The method that uses these descriptors.
     """
 
     peer: int
-    """Target peer rank to wait for signals from."""
     op_count: int = 1
-    """Number of signal operations to wait for from the peer."""
     signal_index: int = 0
-    """Signal index identifier. Currently must be 0."""
     context: int = 0
-    """Context identifier. Currently must be 0."""
 
 
 class NCCLDevCommRequirements:
