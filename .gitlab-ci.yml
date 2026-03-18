@@ -2950,7 +2950,7 @@ perftest_multi-AWS-H100-EFA:
     JUNIT: junit_results_perf_multi.xml
     TEST_WORKSPACE_DIR: ${WORKSPACE_DIR}/perftest-multi
     SLURM_TIME: 80
-    NNODES: 4
+    NNODES: 2
     NP: 8
     MAX: 1G
     GRAPH: 0
