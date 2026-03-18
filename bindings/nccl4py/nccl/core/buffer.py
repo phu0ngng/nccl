@@ -28,7 +28,7 @@ from nccl.core.typing import (
 )
 
 
-__all__ = ["mem_alloc", "mem_free", "NcclBuffer"]
+__all__ = ["mem_alloc", "mem_free"]
 
 
 def mem_alloc(size: int, device: NcclDeviceSpec | None = None) -> Buffer:
