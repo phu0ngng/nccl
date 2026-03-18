@@ -71,6 +71,9 @@ void ncclTestSetlinebuf(FILE* stream);
 }
 #endif
 
+struct ncclComm;
+typedef struct ncclComm* ncclComm_t;
+
 /* Command-line option parsing - getopt_long support
  * On Linux: just use system getopt.h
  * On Windows: provide custom implementation
