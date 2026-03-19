@@ -43,8 +43,10 @@ for python_target in "${python_targets[@]}"; do
     set +x
     echo "Initialized venv at: $venv"
 
-    # Locate the nccl4py wheel based on the python target
-    nccl4py_whl=$(find "build/dist" -type f -name "*$python_target*" 2>/dev/null)
+    # Free-threading wheels (e.g. cp314t) share the python tag with the regular
+    # wheel (cp314) — only the ABI tag differs. Exclude the *t variant when
+    # searching for the non-free-threading target so cp314 doesn't match cp314t.
+    nccl4py_whl=$(find "build/dist" -type f -name "*-${python_target}-*" ! -name "*-${python_target}t-*" 2>/dev/null)
     echo "Found wheel at: $nccl4py_whl"
 
     # Install wheel into the venv
