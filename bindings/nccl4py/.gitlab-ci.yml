@@ -310,6 +310,92 @@ apitests_cu13-single:
 #     NGPUS: 2
 #     INTERFACE_NAME: $IPP6_INTERFACE_NAME
 
+apitests_freethreading_cu12:
+  extends: .base_api_tests_job
+  needs:
+    - job: setup_nccl4py_cu12
+      artifacts: false
+  variables:
+    CUDA_HOME: $IPP6_CUDA12_HOME
+    NCCL_HOME: $IPP6_INSTALL_DIR/build
+    NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA12_TARGET
+    SLURM_PARTITION: $IPP6_SLURM_PARTITION
+    SLURM_TIME: 10
+    NNODES: 1
+    NP: 2
+    NGPUS: 2
+    INTERFACE_NAME: $IPP6_INTERFACE_NAME
+  script:
+    - set -x
+    - |
+      mkdir -p apitest_logs/${NCCL4PY_CUDA_TARGET}
+
+      test -f $NCCL_HOME/lib/libnccl.so
+
+      export CUDA_HOME=${CUDA_HOME}
+      export LD_PRELOAD=${NCCL_HOME}/lib/libnccl.so
+
+      export OMPI_MCA_rmaps_oversubscribe=1
+      export OMPI_MCA_rmaps_binding_policy=none
+      export OMPI_MCA_hwloc_base_binding_policy=none
+      export OMPI_MCA_btl="tcp,self"
+      export OMPI_MCA_btl_tcp_if_include="$INTERFACE_NAME"
+
+      srun \
+      -p ${SLURM_PARTITION} \
+      -J nccl4py-ci:$CI_COMMIT_SHORT_SHA:apitests-ft:$NCCL4PY_CUDA_TARGET \
+      --export=ALL,NCCL_P2P_DISABLE=1,NCCL_IB_DISABLE=1 \
+      -t ${SLURM_TIME} \
+      -N ${NNODES} \
+      --exclusive \
+      -n ${NP} \
+      --ntasks-per-node=${NGPUS} \
+      --mpi=pmix \
+      uv run --python $NCCL4PY_PYTHON314T_TARGET --group test --extra $NCCL4PY_CUDA_TARGET pytest -v --with-mpi --parallel-threads=16 --basetemp=apitest_logs/${NCCL4PY_CUDA_TARGET} tests/apitest/test_freethreading_api.py
+
+apitests_freethreading_cu13:
+  extends: .base_api_tests_job
+  needs:
+    - job: setup_nccl4py_cu13
+      artifacts: false
+  variables:
+    CUDA_HOME: $IPP6_CUDA13_HOME
+    NCCL_HOME: $IPP6_INSTALL_DIR/build
+    NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA13_TARGET
+    SLURM_PARTITION: $IPP6_SLURM_PARTITION
+    SLURM_TIME: 10
+    NNODES: 1
+    NP: 2
+    NGPUS: 2
+    INTERFACE_NAME: $IPP6_INTERFACE_NAME
+  script:
+    - set -x
+    - |
+      mkdir -p apitest_logs/${NCCL4PY_CUDA_TARGET}
+
+      test -f $NCCL_HOME/lib/libnccl.so
+
+      export CUDA_HOME=${CUDA_HOME}
+      export LD_PRELOAD=${NCCL_HOME}/lib/libnccl.so
+
+      export OMPI_MCA_rmaps_oversubscribe=1
+      export OMPI_MCA_rmaps_binding_policy=none
+      export OMPI_MCA_hwloc_base_binding_policy=none
+      export OMPI_MCA_btl="tcp,self"
+      export OMPI_MCA_btl_tcp_if_include="$INTERFACE_NAME"
+
+      srun \
+      -p ${SLURM_PARTITION} \
+      -J nccl4py-ci:$CI_COMMIT_SHORT_SHA:apitests-ft:$NCCL4PY_CUDA_TARGET \
+      --export=ALL,NCCL_P2P_DISABLE=1,NCCL_IB_DISABLE=1 \
+      -t ${SLURM_TIME} \
+      -N ${NNODES} \
+      --exclusive \
+      -n ${NP} \
+      --ntasks-per-node=${NGPUS} \
+      --mpi=pmix \
+      uv run --python $NCCL4PY_PYTHON314T_TARGET --group test --extra $NCCL4PY_CUDA_TARGET pytest -v --with-mpi --parallel-threads=16 --basetemp=apitest_logs/${NCCL4PY_CUDA_TARGET} tests/apitest/test_freethreading_api.py
+
 ##
 ## Stage: apitests - Finish!
 ##
@@ -326,6 +412,10 @@ cleanup:
     - job: apitests_cu12-single
       artifacts: false
     - job: apitests_cu13-single
+      artifacts: false
+    - job: apitests_freethreading_cu12
+      artifacts: false
+    - job: apitests_freethreading_cu13
       artifacts: false
     # - job: apitests_cu12-dual
     #   artifacts: false
