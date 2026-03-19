@@ -160,6 +160,15 @@ else
   echo -e "Disabled Lazy Init TESTS test\n\n"
 fi
 
+if [[ ${PARAM_TESTS} -eq 1 ]] ; then
+  run_command "param_parser_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/param_parser_test" ""
+  run_command "param_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/param_test" ""
+  run_command "param_thread_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/param_thread_test" ""
+  run_command "param_nocache_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/param_nocache_test" ""
+else
+  echo -e "Disabled Param TESTS test\n\n"
+fi
+
 if [[ ${LSA_POINTER_TESTS} -eq 1 ]] ; then
   run_command "lsa_pointer_tests" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/lsa_pointer_test" ""
 else

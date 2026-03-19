@@ -772,6 +772,7 @@ unit-tests-P100:
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
     DYN_MEM_TESTS: 1
+    PARAM_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -824,6 +825,7 @@ unit-tests-P40:
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
     DYN_MEM_TESTS: 1
+    PARAM_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -875,6 +877,7 @@ unit-tests-GP100:
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
     DYN_MEM_TESTS: 1
+    PARAM_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -931,6 +934,7 @@ unit-tests-eos:
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
     GIN_TESTS_LARGE_SIZE: 1
+    PARAM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -983,6 +987,7 @@ unit-tests-cw-dfw:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
+    PARAM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1040,6 +1045,7 @@ unit-tests-AWS-H100-EFA:
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # NVLS support is unstable so we disable it.
     DYN_MEM_TESTS: 1
+    PARAM_TESTS: 1
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
@@ -1091,6 +1097,7 @@ unit-tests-AWS-H100-EFA:
       export LSA_POINTER_TESTS=$LSA_POINTER_TESTS
       export LSA_MULTIMEM_POINTER_TESTS=$LSA_MULTIMEM_POINTER_TESTS
       export DYN_MEM_TESTS=$DYN_MEM_TESTS
+      export PARAM_TESTS=$PARAM_TESTS
 
       # Launch unit test suite
       salloc -N ${NNODES} --exclusive -J "nccl-ci::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} $TEST_CMD
@@ -1152,6 +1159,7 @@ unit-tests-draco_oci:
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # Cluster lacks NVLS support.
     DYN_MEM_TESTS: 1
+    PARAM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gpus-per-node $NGPUS --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1209,6 +1217,7 @@ unit-tests-pre-nyx:
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
     GIN_TESTS_LARGE_SIZE: 1
+    PARAM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1266,6 +1275,7 @@ unit-tests-pre-tyche:
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
     GIN_TESTS_LARGE_SIZE: 1
+    PARAM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1318,6 +1328,7 @@ unit-tests-ipp6-a40:
     DEVAPI_WINDOW_STRESS_TESTS: 0
     LSA_POINTER_TESTS: 0
     LSA_MULTIMEM_POINTER_TESTS: 0 # Nodes lack NVLS support.
+    PARAM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::unit-a40::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1377,6 +1388,7 @@ unit-tests-ipp6-a100:
     GIN_TESTS_LARGE_SIZE: 1
     CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
     DYN_MEM_TESTS: 1
+    PARAM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::unit-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1429,6 +1441,7 @@ unit-tests-dgxspark:
     LSA_POINTER_TESTS: 0
     LSA_MULTIMEM_POINTER_TESTS: 0
     CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
+    PARAM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}:unit-dgxspark::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1481,6 +1494,7 @@ unit-tests-theia:
     LSA_MULTIMEM_POINTER_TESTS: 1
     RMA_SINGLE_NODE_TESTS: 1
     DYN_MEM_TESTS: 1
+    PARAM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1525,6 +1539,7 @@ unit-tests-bia:
     REGISTER_MEMCPY_TESTS: 1
     DEVAPI_WINDOW_STRESS_TESTS: 1
     DYN_MEM_TESTS: 1
+    PARAM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1568,6 +1583,7 @@ unit-tests-polyphe:
     REGISTER_MEMCPY_TESTS: 1
     DEVAPI_WINDOW_STRESS_TESTS: 1
     DYN_MEM_TESTS: 1
+    PARAM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
