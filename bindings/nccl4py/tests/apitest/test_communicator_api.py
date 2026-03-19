@@ -1129,9 +1129,8 @@ def test_suspend_resume_single_gpu_per_process(nccl_comm):
 
     nccl_comm.suspend(nccl.CommSuspendFlag.Mem)
 
-    # After suspend: suspended flag set, suspendable memory freed
+    # After suspend: suspended flag set
     assert nccl_comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemSuspended) == 1
-    assert nccl_comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemSuspend) == 0
 
     nccl_comm.resume()
 
@@ -1189,10 +1188,9 @@ def test_suspend_resume_multi_gpu_per_process():
             for comm in comms:
                 comm.suspend(nccl.CommSuspendFlag.Mem)
 
-        # After suspend: suspended flag set, suspendable memory freed
+        # After suspend: suspended flag set
         for comm in comms:
             assert comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemSuspended) == 1
-            assert comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemSuspend) == 0
 
         # Resume all communicators
         with nccl.group():

@@ -61,7 +61,12 @@ def setup_nccl(tmp_path_factory):
 def get_nccl_debug_file():
     comm = MPI.COMM_WORLD
 
-    hostname = socket.gethostname()
+    # Replicate NCCL's hostname processing from src/debug.cc + src/misc/utils.cc:
+    #   getHostName(..., delim='.') truncates at the first dot (debug.cc:239)
+    #   getHostNameForLog() then replaces '%' and '/' with '-' (debug.cc:49-58)
+    hostname = socket.gethostname().split(".")[0]
+    hostname = hostname.replace("%", "-").replace("/", "-")
+    # ncclOsGetPid() == getpid() (debug.cc:240)
     process_id = os.getpid()
 
     nccl_debug_file_pattern = os.environ.get("NCCL_DEBUG_FILE", "")
