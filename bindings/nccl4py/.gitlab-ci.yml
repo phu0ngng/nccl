@@ -125,6 +125,28 @@ unit_tests:
       --exclusive \
       uv run pytest -v tests/unit_tests/
 
+unit_tests_freethreading:
+  stage: unit-tests
+  needs: []
+  variables:
+    CUDA_HOME: $IPP6_CUDA13_HOME
+    UV_CACHE_DIR: $IPP6_UV_DIR/cache
+    UV_PYTHON_INSTALL_DIR: $IPP6_UV_DIR/python
+    GIT_CLONE_PATH: "${CI_BUILDS_DIR}/${CI_JOB_ID}/${CI_PROJECT_PATH}"
+  tags:
+    - ipp6-nccl
+  <<: *make_dev_step
+  script:
+    - set -x
+    - |
+      srun \
+      -p ${IPP6_SLURM_PARTITION_CPU} \
+      -J nccl4py-ci:$CI_COMMIT_SHORT_SHA:unit_tests_freethreading \
+      -t 10 \
+      -N 1 \
+      --exclusive \
+      uv run --python $NCCL4PY_PYTHON314T_TARGET --group test --extra cu13 pytest -v --parallel-threads=16 tests/unit_tests/test_freethreading.py
+
 ##
 ## Stage: unit_tests - Finish!
 ##
