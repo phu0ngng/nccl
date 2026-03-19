@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <execinfo.h>
 #include <stdint.h>
+#include <string>
 // these are Template specialization
 #define GEN_DATATYPE(X, Y)                                                     \
     template <>                                                                \
@@ -26,9 +27,23 @@ bool initialized = false;
 bool handleRegistered = false;
 bool segvLogPrinted = false;
 
-// Turn off caching for Multi-rank GPU. Additional NCCL_PARAMS can be turned off,
+// Turn off caching for select params. Additional NCCL_PARAMS can be turned off,
 // but any general disabling should be discussed widely.
-ParameterChanger gNoCaching("NCCL_NO_CACHE", "NCCL_MULTI_RANK_GPU_ENABLE");
+const char* kNoCacheEnvVars[] = {
+  "NCCL_MULTI_RANK_GPU_ENABLE",     // ncclMultiRankGpu_test
+  "NCCL_LSA_TEAM_SIZE",             // ncclMultiTeamCommon
+};
+
+std::string getNoCacheEnvVarsString() {
+  std::string result;
+  for (const char* envVar : kNoCacheEnvVars) {
+    result += envVar;
+    result += ",";
+  }
+  return result;
+}
+
+ParameterChanger gNoCaching("NCCL_NO_CACHE", getNoCacheEnvVarsString().c_str());
 
 static void destroyComms(ncclComm_t** array) {
   ncclComm_t* a = *array;

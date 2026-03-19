@@ -6,12 +6,18 @@
 #include <nccl_device.h>
 #include "segmented_allocator.h"
 
+#include <cctype>
 #include <map>
 #include <string>
 #include <vector>
 #include <utility>
 
 #include "../ncclCommon_test.cuh"
+
+// Test name conventions. Test names should include all applicable substrings (i.e. gin tests must contain "gin")
+// We don't currently use the convention to filter tests, but we may want to in the future.
+static const char* const kGinTestNameSubstring = "gin";
+static const char* const kMultiTeamTestNameSubstring = "multi";
 
 // Prints expects and actual if not equal.
 #define KERNEL_ASSERT_EQ(expected, actual, msg) do { \
@@ -37,6 +43,7 @@ enum class TestResult_t {
   } \
 } while(0)
 
+
 // ncclDevApiCommon_test is a base class for all Device API tests.
 // Comms are created once at the beginning of the test suite and destroyed at the end.
 // DevComms are not automatically created - each test must call createDevComms with the appropriate requirements.
@@ -44,18 +51,6 @@ class ncclDevApiCommon_test : public ncclCommon_test<char> {
 public:
   // Per-test state. Each test case must create its own devComms.
   std::vector<ncclDevComm> devComms;
-
-  // Called once before all tests in the suite
-  static void SetUpTestCase() {
-    // Call parent's SetUpTestCase to initialize comms and streams
-    ncclCommon_test<char>::SetUpTestCase();
-  }
-
-  // Called once after all tests in the suite
-  static void TearDownTestCase() {
-    // Call parent's TearDownTestCase to destroy comms
-    ncclCommon_test<char>::TearDownTestCase();
-  }
 
 protected:
 
@@ -66,12 +61,16 @@ protected:
   }
 
   // Helper function to destroy all devcomms
-  void destroyDevComms() {
+  virtual void destroyDevComms() {
+    destroyDevCommsShared(comms);
+  }
+
+  void destroyDevCommsShared(ncclComm_t* commsToUse) {
     if (!devComms.empty()) {
       for (int i = 0; i < nVis; i++) {
         cudaSetDevice(i);
-        if (comms && comms[i]) {
-          ncclDevCommDestroy(comms[i], &devComms[i]);
+        if (commsToUse && commsToUse[i]) {
+          ncclDevCommDestroy(commsToUse[i], &devComms[i]);
         }
       }
       devComms.clear();
@@ -87,6 +86,19 @@ protected:
     ncclCommon_test<char>::TearDown();
   }
 
+  // Returns true if the current test name or test suite (class) name contains the given substring (case-insensitive).
+  static bool testNameContains(const char* substr) {
+    const ::testing::TestInfo* info = ::testing::UnitTest::GetInstance()->current_test_info();
+    auto contains = [&substr](const char* s) {
+      std::string name(s);
+      std::string sub(substr);
+      for (char& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      for (char& c : sub) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      return name.find(sub) != std::string::npos;
+    };
+    return contains(info->name()) || contains(info->test_case_name());
+  }
+
   // call cudaStreamSynchronize on all streams
   void syncAllDevices() {
     for (int i = 0; i < nVis; i++) {
@@ -95,10 +107,14 @@ protected:
     }
   }
 
+  virtual TestResult_t createDevComms(const ncclDevCommRequirements& reqs) {
+    return createDevCommsShared(reqs, comms);
+  }
+
   // Helper to create devComms with specific requirements
   // Returns TestResult_t: testSuccess, testSkipped (if not supported), or testError
   // Tests should use TESTCHECK(createDevComms(reqs)) to handle the result
-  TestResult_t createDevComms(const ncclDevCommRequirements& reqs) {
+  TestResult_t createDevCommsShared(const ncclDevCommRequirements& reqs, ncclComm_t* comms) {
     if (devComms.size() != 0) { // Something has gone wrong if we already have devComms
       return TestResult_t::testError;
     }
@@ -116,8 +132,14 @@ protected:
         return TestResult_t::testSkipped;
       }
       bool ginRequested = reqs.ginForceEnable || reqs.ginConnectionType != NCCL_GIN_CONNECTION_NONE;
-      if (ginRequested && props.ginType == NCCL_GIN_TYPE_NONE) {
-        return TestResult_t::testSkipped;
+      if (ginRequested) {
+        if (!testNameContains(kGinTestNameSubstring)) {
+          printf("GIN test name does not contain '%s'\n", kGinTestNameSubstring);
+          return TestResult_t::testError;
+        }
+        if (props.ginType == NCCL_GIN_TYPE_NONE) {
+          return TestResult_t::testSkipped;
+        }
       }
     }
 
