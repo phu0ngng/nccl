@@ -50,6 +50,7 @@ add_subdirectory(nccl_device)
 add_subdirectory(scheduler)
 add_subdirectory(os)
 add_subdirectory(rma)
+add_subdirectory(param)
 
 # GIN is Linux-only (requires InfiniBand verbs)
 if(NCCL_OS_LINUX)
@@ -73,6 +74,7 @@ list(APPEND LIBSRCFILES
     ${OS_SOURCES}
     ${DOCA_SOURCES}
     ${RMA_SOURCES}
+    ${PARAM_SOURCES}
 )
 
 # Add GIN sources only on Linux
@@ -139,8 +141,17 @@ endif()
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/include/nccl_device.h ${CMAKE_BINARY_DIR}/include/nccl_device.h COPYONLY)
 
+# Copy param public headers to the build include directory
+file(GLOB SRC_PARAM_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/include/param/*.h)
+foreach(HEADER_FILE ${SRC_PARAM_HEADERS})
+    get_filename_component(HEADER_NAME ${HEADER_FILE} NAME)
+    configure_file(${HEADER_FILE} ${CMAKE_BINARY_DIR}/include/param/${HEADER_NAME} COPYONLY)
+    list(APPEND PARAM_HEADERS ${CMAKE_BINARY_DIR}/include/param/${HEADER_NAME})
+endforeach()
+
 # Skip DOCA device headers for Windows platform; use on other platforms when set
-set(NCCL_HEADER_DEPS ${CMAKE_BINARY_DIR}/include/nccl.h ${CMAKE_BINARY_DIR}/include/nccl_device.h ${DEVICE_HEADERS})
+set(NCCL_HEADER_DEPS ${CMAKE_BINARY_DIR}/include/nccl.h ${CMAKE_BINARY_DIR}/include/nccl_device.h ${DEVICE_HEADERS}
+    ${PARAM_HEADERS})
 if(NOT NCCL_OS_WINDOWS AND DEVICE_DOCA_HEADERS)
     list(APPEND NCCL_HEADER_DEPS ${DEVICE_DOCA_HEADERS})
 endif()

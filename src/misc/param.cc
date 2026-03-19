@@ -6,6 +6,7 @@
  *************************************************************************/
 
 #include "param.h"
+#include "param/param.h"
 #include "debug.h"
 #include "env.h"
 
@@ -70,36 +71,15 @@ void initEnv() {
   std::call_once(once, initEnvFunc);
 }
 
-static std::unordered_set<std::string> noCacheSet;
-static bool noCacheAll = false;
-
-static void ncclGetEnvNoCacheOnce() {
-  const char* envNoCache = ncclGetEnv("NCCL_NO_CACHE");
-  if (envNoCache == NULL || strlen(envNoCache) == 0) return;
-
-  char* copy = strdup(envNoCache);
-  char* token = strtok(copy, ",");
-  while (token != NULL) {
-    if (strcmp(token, "ALL") == 0) {
-      noCacheAll = true;
-      break;
-    } else {
-      noCacheSet.insert(token);
-    }
-    token = strtok(NULL, ",");
-  }
-  free(copy);
-}
-
 static void ncclGetCachePolicy(char const* env, int8_t* noCache) {
-  *noCache = (noCacheAll || noCacheSet.count(env) > 0) ? /*noCache*/ 1 : /*cache*/ 0;
+  using NcclStringSet = std::unordered_set<std::string>;
+  USE_NCCL_PARAM(ncclParamNoCacheSet, NcclStringSet);
+  static bool noCacheAll = ncclParamNoCacheSet().count("ALL");
+  *noCache = (noCacheAll || ncclParamNoCacheSet().count(env) > 0) ? /*noCache*/ 1 : /*cache*/ 0;
   if (*noCache) INFO(NCCL_ENV, "Disabling caching for environment variable %s.", env);
 }
 
 int64_t ncclLoadParam(char const* env, int64_t deftVal, int64_t uninitialized, int64_t* cache, int8_t* noCache) {
-  static std::once_flag once;
-  std::call_once(once, ncclGetEnvNoCacheOnce);
-
   static std::mutex mutex;
   std::lock_guard<std::mutex> lock(mutex);
 
