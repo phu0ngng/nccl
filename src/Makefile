@@ -40,6 +40,7 @@ LIBSRCFILES := \
 	$(filter-out param/ncclparam.cc,$(wildcard param/*.cc)) \
 	$(filter-out ras/client.cc,$(wildcard ras/*.cc))
 BINSRCFILES := ras/client.cc
+PARAMBINSRCFILES := param/ncclparam.cc
 
 ifeq ($(NCCL_OS_LINUX), 1)
 	LIBSRCFILES += os/linux.cc os/linux_ipcsocket.cc
@@ -56,6 +57,7 @@ LIBNAME     := libnccl.so
 STATICLIBNAME := libnccl_static.a
 ##### binaries
 BINNAME := ncclras
+PARAMBIN := ncclparam
 ##### pkgconfig files
 PKGCONFIGFILE := nccl.pc
 ##### dirs
@@ -81,7 +83,8 @@ STATICLIBTARGET := $(STATICLIBNAME)
 PKGTARGET  := $(PKGCONFIGFILE)
 LIBOBJ     := $(LIBSRCFILES:%.cc=$(OBJDIR)/%.o)
 BINOBJ     := $(BINSRCFILES:%.cc=$(OBJDIR)/%.o)
-DEPFILES   := $(LIBOBJ:%.o=%.d) $(BINOBJ:%.o=%.d)
+PARAMBINOBJ     := $(PARAMBINSRCFILES:%.cc=$(OBJDIR)/%.o)
+DEPFILES   := $(LIBOBJ:%.o=%.d) $(BINOBJ:%.o=%.d) $(PARAMBINOBJ:%.o=%.d)
 LDFLAGS    += -L${CUDA_LIB} -l$(CUDARTLIB) -lpthread -lrt -ldl
 INCPLUGIN  := include/plugin
 
@@ -111,7 +114,7 @@ lib : $(INCTARGETS) $(LIBDIR)/$(LIBTARGET) $(PKGDIR)/$(PKGTARGET)
 
 staticlib : $(LIBDIR)/$(STATICLIBTARGET)
 
-binary : $(BINDIR)/$(BINNAME)
+binary : $(BINDIR)/$(BINNAME) $(BINDIR)/$(PARAMBIN)
 
 $(DEVMANIFEST): ALWAYS_REBUILD $(INCTARGETS)
 	$(MAKE) -C ./device
@@ -152,6 +155,11 @@ $(BINDIR)/$(BINNAME): $(BINOBJ)
 	@printf "Linking    %-35s > %s\n" $(BINNAME) $@
 	mkdir -p $(BINDIR)
 	$(CXX) $(CXXFLAGS) $^ -o $@
+
+$(BINDIR)/$(PARAMBIN): $(PARAMBINOBJ) $(LIBDIR)/$(LIBTARGET)
+	@printf "Linking    %-35s > %s\n" $(PARAMBIN) $@
+	mkdir -p $(BINDIR)
+	$(CXX) $(CXXFLAGS) $< -o $@ -L$(LIBDIR) -lnccl -L${CUDA_LIB} -l$(CUDARTLIB) -lpthread -lrt -ldl
 
 $(PKGDIR)/nccl.pc : nccl.pc.in
 	mkdir -p $(PKGDIR)
@@ -257,6 +265,7 @@ install : build
 	cp -P -v $(BUILDDIR)/lib/pkgconfig/* $(PREFIX)/lib/pkgconfig/
 	cp -v -r $(BUILDDIR)/include/* $(PREFIX)/include/
 	cp -v $(BUILDDIR)/bin/ncclras $(PREFIX)/bin/
+	cp -v $(BUILDDIR)/bin/ncclparam $(PREFIX)/bin/
 
 FILESTOFORMAT := $(shell find . -name ".\#*" -prune -o \( -name "*.cc" -o -name "*.h" \) -print | grep -v -E 'ibvwrap.h|nvmlwrap.h|gdrwrap.h|nccl.h')
 # Note that formatting.mk defines a new target so in order to not overwrite the default target,

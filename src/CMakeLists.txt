@@ -246,6 +246,33 @@ set_target_properties(ncclras PROPERTIES
 )
 endif()
 
+###################### Create a param tool binary executable #####################
+if(NOT NCCL_OS_WINDOWS)
+add_executable(ncclparam param/ncclparam.cc)
+
+target_include_directories(ncclparam
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
+    ${CUDAToolkit_INCLUDE_DIRS}
+)
+
+add_dependencies(ncclparam nccl_header)
+
+target_link_libraries(ncclparam
+    PRIVATE
+    nccl
+    CUDA::cudart
+)
+
+set_target_properties(ncclparam PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+endif()
+
 ###################### Create a static NCCL library ############################
 add_library(nccl_static STATIC ${LIBSRCFILES})
 if(NCCL_OS_WINDOWS)
@@ -320,7 +347,7 @@ endif()
 
 # Install tools, but do not export them as linkable imported targets.
 if(NOT NCCL_OS_WINDOWS)
-install(TARGETS ncclras
+install(TARGETS ncclras ncclparam
   RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 endif()
