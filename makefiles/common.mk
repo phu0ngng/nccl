@@ -12,6 +12,7 @@ KEEP ?= 0
 DEBUG ?= 0
 ASAN ?= 0
 UBSAN ?= 0
+TSAN ?= 0
 TRACE ?= 0
 WERROR ?= 0
 PROFAPI ?= 1
@@ -142,6 +143,15 @@ ifneq ($(UBSAN), 0)
 CXXFLAGS += -fsanitize=undefined
 LDFLAGS += -fsanitize=undefined -static-libubsan
 NVLDFLAGS += -Xcompiler -fsanitize=undefined,-static-libubsan
+endif
+
+ifneq ($(TSAN), 0)
+ifneq ($(ASAN), 0)
+$(error TSAN and ASAN cannot be enabled simultaneously)
+endif
+CXXFLAGS += -fsanitize=thread
+LDFLAGS += -fsanitize=thread -static-libtsan
+NVLDFLAGS += -Xcompiler -fsanitize=thread,-static-libtsan
 endif
 
 ifneq ($(VERBOSE), 0)

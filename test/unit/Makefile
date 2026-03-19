@@ -14,7 +14,8 @@ ifeq ($(MPI_IBM),1)
 NVLDFLAGS += -lmpi_ibm
 endif
 # We need private functions. Include and link with src
-SRCINC = -I$(BUILDDIR)/include/ -I../include -I../../src/include -I ../../src/device/ -I../../src/graph -I../../src/include/plugin
+GTEST_DIR = ../googletest/googletest
+SRCINC = -I$(BUILDDIR)/include/ -I../include -I../../src/include -I ../../src/device/ -I../../src/graph -I../../src/include/plugin -I$(GTEST_DIR)/include
 # Use static library since all the internal symbols are there
 DLIB = ${BUILDDIR}/lib/libnccl.so
 DLIBFLAGS = $(NVLDFLAGS) -L$(BUILDDIR)/lib -lnccl -lcudart
@@ -27,7 +28,7 @@ STATICLDFLAGS += -lcudart_static
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
 CU_FILES := align_test.cu  #kernel_test.cu
 #CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc channel_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc
-CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc affinity_restore_test.cc intrusive_map_test.cc register_mix_a2a_ar.cc lazy_init_test.cc
+CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc affinity_restore_test.cc intrusive_map_test.cc register_mix_a2a_ar.cc lazy_init_test.cc param_parser_test.cc param_test.cc param_thread_test.cc param_nocache_test.cc
 # Compile-only tests (static assertions, no executable needed)
 COMPILE_ONLY_CC_FILES := backwards_compat.cc
 KCU_FILES := align_test.cu #kernel_test.cu
@@ -342,6 +343,26 @@ ${DST_DIR}/intrusive_map_test: ${DST_DIR}/intrusive_map_test.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+
+${DST_DIR}/param_parser_test: ${DST_DIR}/param_parser_test.o ${STATICLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS} ${BUILDDIR}/test/gtest.a ${BUILDDIR}/test/gtest_main.a
+
+${DST_DIR}/param_test: ${DST_DIR}/param_test.o ${STATICLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS} ${BUILDDIR}/test/gtest.a ${BUILDDIR}/test/gtest_main.a
+
+${DST_DIR}/param_thread_test: ${DST_DIR}/param_thread_test.o ${STATICLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS} ${BUILDDIR}/test/gtest.a ${BUILDDIR}/test/gtest_main.a
+
+${DST_DIR}/param_nocache_test: ${DST_DIR}/param_nocache_test.o ${STATICLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS} ${BUILDDIR}/test/gtest.a ${BUILDDIR}/test/gtest_main.a
 
 ${DST_DIR}/lsa_pointer_test: ${DST_DIR}/lsa_pointer_test.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@

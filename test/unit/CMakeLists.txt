@@ -16,6 +16,10 @@ set(UNIT_TEST_SOURCES
     register_memcpyTest.cu
     intrusive_map_test.cc
     lazy_init_test.cc
+    param_parser_test.cc
+    param_test.cc
+    param_thread_test.cc
+    param_nocache_test.cc
 )
 
 # MPI-dependent sources
