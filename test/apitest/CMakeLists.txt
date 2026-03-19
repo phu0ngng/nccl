@@ -45,12 +45,14 @@ set(PLUGIN_SOURCES
     plugin/net-plugin_v9.cc
     plugin/net-plugin_v10.cc
     plugin/net-plugin_v11.cc
+    plugin/net-plugin_v12.cc
     plugin/net-plugin_nodev_v6.cc
     plugin/net-plugin_nodev_v7.cc
     plugin/net-plugin_nodev_v8.cc
     plugin/net-plugin_nodev_v9.cc
     plugin/net-plugin_nodev_v10.cc
     plugin/net-plugin_nodev_v11.cc
+    plugin/net-plugin_nodev_v12.cc
     plugin/shared-plugins.cc
     plugin/net-plugin-init-once.cc
 )

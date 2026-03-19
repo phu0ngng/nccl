@@ -752,7 +752,7 @@ TEST_F(ncclCommInitRankConfig_test, shared_plugin_lib) {
     ncclComm_t *comms = nullptr;
     ncclUniqueId id;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-    config.netName = "ncclNetPlugin_v11";
+    config.netName = "ncclNetPlugin_v12";
 
     ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));

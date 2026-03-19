@@ -75,7 +75,7 @@ __hidden ncclResult_t netPluginInit(void** ctx, uint64_t commId, ncclNetCommConf
 
 __hidden ncclResult_t netPluginDevices(int* ndev) { *ndev = context[0].devices + virtualDeviceCount; return ncclSuccess; }
 __hidden ncclResult_t netPluginGetProperties(int dev, ncclNetProperties_t* props) {
-  props->name = (char *)"ncclNetPlugin_v11";
+  props->name = (char *)"ncclNetPlugin_v12";
   props->pciPath = NULL;
   props->guid = 0;
   props->ptrSupport = NCCL_PTR_HOST;
@@ -199,8 +199,8 @@ __hidden ncclResult_t netPluginFinalize(void *ctx) {
   return ncclSuccess;
 }
 
-extern "C" __attribute__((visibility("default"))) const ncclNet_t ncclNetPlugin_v11 = {
-  .name = "ncclNetPlugin_v11",
+extern "C" __attribute__((visibility("default"))) const ncclNet_t ncclNetPlugin_v12 = {
+  .name = "ncclNetPlugin_v12",
   .init = netPluginInit,
   .devices = netPluginDevices,
   .getProperties = netPluginGetProperties,
@@ -221,6 +221,7 @@ extern "C" __attribute__((visibility("default"))) const ncclNet_t ncclNetPlugin_
   .irecvConsumed = netPluginIrecvConsumed,
   .makeVDevice   = netPluginMakeVDevice,
   .finalize = netPluginFinalize,
+  .setNetAttr = NULL,
 };
 
 __hidden ncclResult_t tunerPluginInit(void** ctx, uint64_t commId, size_t nranks, size_t nnodes, ncclDebugLogger_t logFunction,
