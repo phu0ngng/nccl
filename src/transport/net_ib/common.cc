@@ -24,6 +24,7 @@ NCCL_PARAM(IbPrepostReceiveWorkRequests, "IB_PREPOST_RECEIVE_WORK_REQUESTS", -2)
 NCCL_PARAM(IbAsyncEvents,"IB_RETURN_ASYNC_EVENTS",1);
 extern int ncclParamIbReceiverSideMatchingScheme();
 extern int ncclParamIbOooRq();
+extern int ncclParamIbResiliencyPortFailover();
 
 
 ncclResult_t ncclIbStatsCheckFatalCount(struct ncclIbStats* stat, const char* funcName) {
@@ -64,10 +65,10 @@ ncclResult_t ncclIbBaseCommInit(struct ncclIbNetCommBase* baseComm, bool isSend)
   NCCLCHECK(ncclIbResiliencyInit(baseComm, &baseComm->resiliency));
   baseComm->recvMatchingScheme = ncclParamIbReceiverSideMatchingScheme() == -2 ? BY_INDEX : ncclParamIbReceiverSideMatchingScheme();
 
-  if (ncclParamIbOooRq()) {
+  if (ncclParamIbOooRq() || (ncclParamIbResiliencyPortFailover() == 1)) {
     baseComm->recvMatchingScheme = BY_ID;
     if (ncclParamIbReceiverSideMatchingScheme() == BY_INDEX) {
-      INFO(NCCL_NET, "NET/IB: %s: OOO RQ is enabled, Overriding matching scheme to ID-based (1).", __func__);
+      INFO(NCCL_NET, "NET/IB: %s: Overriding matching scheme to ID-based (%d)", __func__, BY_ID);
     }
   }
 
@@ -87,7 +88,7 @@ ncclResult_t ncclIbRecvCommInit(struct ncclIbRecvComm* recvComm) {
 
   if (recvComm->base.resiliency) {
     if (ncclParamIbPrepostReceiveWorkRequests() == 0) {
-      WARN("NET/IB: %s: Resiliency requires pre-posted receive work requests. Enabling pre-posting.", __func__);
+      INFO(NCCL_NET, "NET/IB: %s: Overriding pre-posting to true (1).", __func__);
     }
     recvComm->prepostReceiveWorkRequests = true;
   }
