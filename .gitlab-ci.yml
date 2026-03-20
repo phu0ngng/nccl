@@ -2537,6 +2537,7 @@ perftest_single-AWS-H100-EFA:
       export GRAPH=$GRAPH
       export MAX=$MAX
       export SYMMETRIC=$SYMMETRIC
+      export SKIP_MULTI_RANK_GPU=$SKIP_MULTI_RANK_GPU
 
       # Launch perftest-single suite
       salloc -N ${NNODES} --exclusive -J "nccl-ci::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} $TEST_CMD
@@ -2990,11 +2991,13 @@ perftest_multi-AWS-H100-EFA:
       export LD_LIBRARY_PATH=${NCCL_HOME}/lib:${LD_LIBRARY_PATH}
       export JUNIT=${JUNIT}
 
+      # Perftest-multi variables
       export NCCL_NVLS_ENABLE=0
       export MAX=$MAX
       export GRAPH=$GRAPH
       export SKIP_FT_FINALIZE=$SKIP_FT_FINALIZE
       export DEVICE_API=$DEVICE_API
+      export SKIP_MULTI_RANK_GPU=$SKIP_MULTI_RANK_GPU
 
       # Launch perftest-multi suite
       salloc -N ${NNODES} --exclusive -J "nccl-ci::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} $TEST_CMD
