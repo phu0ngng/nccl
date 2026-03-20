@@ -28,6 +28,13 @@ fi
 # Args for run_command
 # run_command "label" "run_mode" "ppn" "test_mpi_flags" "test_env_vars" "binary" "args"
 
+# When running cross-clique-only jobs, skip all standard perf tests
+if [ "$CROSS_CLIQUE_NATIVE" == "1" ] || [ "$CROSS_CLIQUE_EMULATED" == "1" ]; then
+  SKIP_STANDARD_PERF=1
+fi
+
+if [ "$SKIP_STANDARD_PERF" != "1" ]; then
+
 for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_gather_perf alltoall_perf gather_perf scatter_perf sendrecv_perf all_gatherv_perf; do
   run_command "${func}_all_sizes" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts"
 done
@@ -377,6 +384,97 @@ if [ "$SKIP_MULTI_RANK_GPU" != "1" ]; then
     # NGPUS/2 processes, 2 threads each, 2 GPUs per thread
     # P0t0=(0,0), P0t1=(0,1), P1t0=(1,1), P1t1=(2,2), ...
     run_command "${func}_multi_rank_gpu_mt_mg" $RUN_MODE $((NGPUS/2)) "--oversubscribe" "$multi_rank_env" "$NCCL_HOME/test/perf/$func" "$multi_rank_range $multi_rank_opts -t 2 -g 2"
+  done
+fi
+
+fi # SKIP_STANDARD_PERF
+
+# Native cross-clique P2P (real rack topology, NCCL_MNNVL_CLIQUE_ID=-2)
+if [ "$CROSS_CLIQUE_NATIVE" == "1" ]; then
+  xc_env="NCCL_MNNVL_CLIQUE_ID=-2 NCCL_MNNVL_CROSS_CLIQUE=1 NCCL_NET_PLUGIN=none"
+  xc_opts="-w 1 -G 0 -s 512M -M 1"
+  xc_range="-b 8 -e ${MAX:-1G} -f 2"
+
+  if [ "${CROSS_CLIQUE_QUICK:-0}" == "1" ]; then
+    xc_range="-b 8 -e 1G -f 2"
+    run_command "nvl576_all_reduce_perf" $RUN_MODE $NGPUS "" "$xc_env" \
+      "$NCCL_HOME/test/perf/all_reduce_perf" "$xc_range $xc_opts -R 1 -g 1"
+    run_command "nvl576_all_reduce_nvls_off" $RUN_MODE $NGPUS "" "$xc_env NCCL_NVLS_ENABLE=0" \
+      "$NCCL_HOME/test/perf/all_reduce_perf" "$xc_range $xc_opts -R 1 -g 1"
+    run_command "nvl576_all_gather_perf" $RUN_MODE $NGPUS "" "$xc_env" \
+      "$NCCL_HOME/test/perf/all_gather_perf" "$xc_range $xc_opts -R 1 -g 1"
+    run_command "nvl576_alltoall_ce" $RUN_MODE $NGPUS "" "$xc_env" \
+      "$NCCL_HOME/test/perf/alltoall_perf" "-b 128 -e 2G -f 2 -G 0 -R 2 -x 2 -w 1 -M 1 -g 1"
+    run_command "nvl576_all_reduce_tree" $RUN_MODE $NGPUS "" "$xc_env NCCL_ALGO=Tree" \
+      "$NCCL_HOME/test/perf/all_reduce_perf" "$xc_range $xc_opts -R 1 -g 1"
+  else
+    for func in all_reduce_perf reduce_scatter_perf all_gather_perf; do
+      run_command "nvl576_${func}" $RUN_MODE $NGPUS "" "$xc_env" \
+        "$NCCL_HOME/test/perf/$func" "$xc_range $xc_opts -R 1 -g 1"
+    done
+
+    run_command "nvl576_alltoall_perf" $RUN_MODE $NGPUS "" "$xc_env" \
+      "$NCCL_HOME/test/perf/alltoall_perf" "$xc_range $xc_opts -R 1 -g 1"
+
+    run_command "nvl576_all_reduce_nvls_off" $RUN_MODE $NGPUS "" "$xc_env NCCL_NVLS_ENABLE=0" \
+      "$NCCL_HOME/test/perf/all_reduce_perf" "$xc_range $xc_opts -R 1 -g 1"
+
+    run_command "nvl576_all_reduce_tree" $RUN_MODE $NGPUS "" "$xc_env NCCL_ALGO=Tree" \
+      "$NCCL_HOME/test/perf/all_reduce_perf" "$xc_range $xc_opts -R 1 -g 1"
+    run_command "nvl576_all_reduce_tree_nvls_off" $RUN_MODE $NGPUS "" \
+      "$xc_env NCCL_ALGO=Tree NCCL_NVLS_ENABLE=0" \
+      "$NCCL_HOME/test/perf/all_reduce_perf" "$xc_range $xc_opts -R 1 -g 1"
+
+    xc_ce_max="${CROSS_CLIQUE_CE_MAX:-8G}"
+    for func in all_gather_perf alltoall_perf scatter_perf gather_perf; do
+      run_command "nvl576_${func}_ce" $RUN_MODE $NGPUS "" "$xc_env" \
+        "$NCCL_HOME/test/perf/$func" "-b 128 -e $xc_ce_max -f 2 -G 0 -R 2 -x 2 -w 1 -M 1 -g 1"
+    done
+
+    for func in all_reduce_perf reduce_scatter_perf all_gather_perf; do
+      run_command "nvl576_${func}_symm" $RUN_MODE $NGPUS "" "$xc_env" \
+        "$NCCL_HOME/test/perf/$func" "$xc_range $xc_opts -R 2 -g 1"
+    done
+  fi
+fi
+
+# Emulated cross-clique P2P (wrapper-based, optional multi-NVLD via NVLDS env var)
+if [ "$CROSS_CLIQUE_EMULATED" == "1" ]; then
+  xc_wrapper="test/scripts/ci/cross-clique-wrapper.sh"
+  xc_env="CLIQUE_SIZE=${CLIQUE_SIZE:-1}"
+  xc_opts="-w 1 -G 0 -s 512M -M 1"
+  xc_range="-b 8 -e $MAX -f 2"
+
+  for func in all_reduce_perf reduce_scatter_perf all_gather_perf; do
+    run_command "xclique_${func}" $RUN_MODE $NGPUS "" "$xc_env" "$xc_wrapper $NCCL_HOME/test/perf/$func" "$xc_range $xc_opts -R 1"
+  done
+
+  run_command "xclique_alltoall_perf" $RUN_MODE $NGPUS "" "$xc_env" "$xc_wrapper $NCCL_HOME/test/perf/alltoall_perf" "$xc_range $xc_opts -R 1"
+
+  run_command "xclique_all_reduce_perf_nvls_off" $RUN_MODE $NGPUS "" "$xc_env NCCL_NVLS_ENABLE=0" "$xc_wrapper $NCCL_HOME/test/perf/all_reduce_perf" "$xc_range $xc_opts -R 1"
+
+  run_command "xclique_all_reduce_perf_tree" $RUN_MODE $NGPUS "" "$xc_env NCCL_ALGO=Tree" "$xc_wrapper $NCCL_HOME/test/perf/all_reduce_perf" "$xc_range $xc_opts -R 1"
+  run_command "xclique_all_reduce_perf_tree_nvls_off" $RUN_MODE $NGPUS "" "$xc_env NCCL_ALGO=Tree NCCL_NVLS_ENABLE=0" "$xc_wrapper $NCCL_HOME/test/perf/all_reduce_perf" "$xc_range $xc_opts -R 1"
+
+  for func in all_gather_perf alltoall_perf scatter_perf gather_perf; do
+    run_command "xclique_${func}_ce" $RUN_MODE $NGPUS "" "$xc_env" "$xc_wrapper $NCCL_HOME/test/perf/$func" "-b 128 -e 8G -f 2 -G 0 -R 2 -x 2 -w 1 -M 1"
+  done
+
+  if [ "$DEVICE_API" != "0" ]; then
+    for impl in 1 2; do
+      run_command "xclique_alltoall_perf_lsa_${impl}" $RUN_MODE $NGPUS "" "$xc_env" "$xc_wrapper $NCCL_HOME/test/perf/alltoall_perf" "$xc_range $xc_opts -R 2 -D $impl"
+    done
+    for impl in 3; do
+      run_command "xclique_alltoall_perf_gin_proxy_${impl}" $RUN_MODE $NGPUS "" "$xc_env NCCL_GIN_TYPE=2" "$xc_wrapper $NCCL_HOME/test/perf/alltoall_perf" "$xc_range $xc_opts -R 2 -D $impl"
+      run_command "xclique_alltoall_perf_gin_gdaki_${impl}" $RUN_MODE $NGPUS "" "$xc_env NCCL_GIN_TYPE=3" "$xc_wrapper $NCCL_HOME/test/perf/alltoall_perf" "$xc_range $xc_opts -R 2 -D $impl"
+    done
+    for impl in 4; do
+      run_command "xclique_alltoall_perf_hybrid_${impl}" $RUN_MODE $NGPUS "" "$xc_env" "$xc_wrapper $NCCL_HOME/test/perf/alltoall_perf" "$xc_range $xc_opts -R 2 -D $impl"
+    done
+  fi
+
+  for func in all_reduce_perf reduce_scatter_perf all_gather_perf; do
+    run_command "xclique_${func}_symm" $RUN_MODE $NGPUS "" "$xc_env" "$xc_wrapper $NCCL_HOME/test/perf/$func" "$xc_range $xc_opts -R 2"
   done
 fi
 
