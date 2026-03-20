@@ -164,10 +164,6 @@ static ncclResult_t ncclIbQueryOooRqSize(struct ibv_context* ibvCtx, const char 
     *oooRqSize = dvCtx.ooo_recv_wrs_caps.max_rc;
   }
 
-  if (*oooRqSize == 0) {
-    WARN("NET/IB: OOO RQ is force enabled but oooRqSize is 0 on device %s, mask=%u", devName, (dvCtx.comp_mask & MLX5DV_CONTEXT_MASK_OOO_RECV_WRS) ? 1 : 0);
-    goto fail;
-  }
 
   return ncclSuccess;
 fail:
@@ -300,6 +296,7 @@ ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallba
         }
         char dataDirectDevicePath[PATH_MAX] = "/sys";
         int devCount = /*undefined*/-1, devOffset = 0;
+
         uint32_t oooRqSize = 0;
         enum ncclIbProvider ibProvider = wrap_mlx5dv_is_supported(devices[d]) ? IB_PROVIDER_MLX5 : IB_PROVIDER_NONE;
         if (ibProvider == IB_PROVIDER_MLX5 && ncclParamIbOooRq()) {
@@ -376,6 +373,7 @@ ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallba
               }
 
               ncclIbDevs[ncclNIbDevs].maxQp = devAttr.max_qp;
+              ncclIbDevs[ncclNIbDevs].oooRqSize = oooRqSize;
               ncclIbDevs[ncclNIbDevs].mrCache.capacity = 0;
               ncclIbDevs[ncclNIbDevs].mrCache.population = 0;
               ncclIbDevs[ncclNIbDevs].mrCache.slots = NULL;
@@ -386,12 +384,6 @@ ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallba
               ncclIbDevs[ncclNIbDevs].ar = (portAttr.link_layer == IBV_LINK_LAYER_INFINIBAND) ? 1 : 0;
               if (ncclParamIbAdaptiveRouting() != -2) ncclIbDevs[ncclNIbDevs].ar = ncclParamIbAdaptiveRouting();
 
-              // out-of-order recv prerequisite: ar enabled
-              ncclIbDevs[ncclNIbDevs].oooRqSize = (ncclIbDevs[ncclNIbDevs].ar > 0) ? oooRqSize : 0;
-              if (ncclParamIbOooRq() && ncclIbDevs[ncclNIbDevs].ar == 0) {
-                WARN("NET/IB: OOO RQ is force enabled but AR is disabled on device %s", devices[d]->name);
-                ret = ncclInternalError; goto fail;
-              }
 
               INFO(NCCL_NET, "NET/IB: [%d] %s:%s:%d/%s provider=%s speed=%d context=%p pciPath=%s ar=%d oooRqSize=%d", d, devices[d]->name, devices[d]->dev_name,
                    ncclIbDevs[ncclNIbDevs].portNum, NCCL_IB_LLSTR(portAttr.link_layer), ibProviderName[ncclIbDevs[ncclNIbDevs].ibProvider], ncclIbDevs[ncclNIbDevs].speed, context,

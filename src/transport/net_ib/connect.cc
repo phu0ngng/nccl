@@ -496,9 +496,13 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
     qpCreateAttrs.qpContext = &comm->base.stats;
 
     if (ibDev->ibProvider == IB_PROVIDER_MLX5 && ncclParamIbOooRq()) {
+      if (ibDev->ar == 0) {
+        WARN("NET/IB: %s: OOO RQ is force enabled but AR is not enabled, which is required for OOO RQ (device=%s)", __func__, ibDev->devName);
+        return ncclInternalError;
+      }
       qpCreateAttrs.oooRq = (comm->base.remOooRq && comm->base.localOooRq);
       if (!qpCreateAttrs.oooRq) {
-        WARN("NET/IB: %s: OOO RQ is force enabled but not supported. device:%s, localOooRq=%d, remOooRq=%d",
+        WARN("NET/IB: %s: OOO RQ is force enabled but not supported on both sides of the connection (device=%s, localOooRq=%d, remOooRq=%d)",
           __func__, ibDev->devName, comm->base.localOooRq, comm->base.remOooRq);
         return ncclInternalError;
       }
@@ -949,10 +953,14 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
       ncclIbResiliencyDataRqSizeGet(rComm->base.resiliency, devIndex, &qpCreateAttrs.maxRecvWorkRequest);
     }
     if (ibDev->ibProvider == IB_PROVIDER_MLX5 && ncclParamIbOooRq()) {
+      if (ibDev->ar == 0) {
+        WARN("NET/IB: %s: OOO RQ is force enabled but AR is not enabled, which is required for OOO RQ (device=%s)", __func__, ibDev->devName);
+        return ncclInternalError;
+      }
       qpCreateAttrs.oooRq = (rComm->base.remOooRq && rComm->base.localOooRq);
       // out-of-order recv prerequisite: oooRq is supported on both sides
       if (!qpCreateAttrs.oooRq) {
-        WARN("NET/IB: %s: OOO RQ is force enabled but not supported on device:%s, localOooRq=%d, remOooRq=%d",
+        WARN("NET/IB: %s: OOO RQ is force enabled but not supported on both sides of the connection (device=%s, localOooRq=%d, remOooRq=%d)",
           __func__, ibDev->devName, rComm->base.localOooRq, rComm->base.remOooRq);
         return ncclInternalError;
       }
