@@ -21,6 +21,12 @@ NCCL_PARAM(IbTc, "IB_TC", -1);
 NCCL_PARAM(IbFifoTc, "IB_FIFO_TC", -1);
 NCCL_PARAM(IbEceEnable,"IB_ECE_ENABLE",1);
 
+extern int64_t ncclParamIbOooRq();
+
+struct ncclIbDevExtraProps {
+  bool oooRq;
+};
+
 enum ncclIbCommState {
   ncclIbCommStateStart = 0,
   ncclIbCommStateConnect = 1,
@@ -314,7 +320,6 @@ ncclResult_t ncclIbGetGidIndex(struct ibv_context *context, uint8_t portNum, str
 
   return ncclSuccess;
 }
-
 ncclResult_t ncclIbQpInit(struct ncclIbQp* qp) {
   struct ncclIbQpInitAttr* initAttr = &qp->initAttr;
   struct ibv_qp_attr qpAttr;
@@ -327,7 +332,38 @@ ncclResult_t ncclIbQpInit(struct ncclIbQp* qp) {
   return ncclSuccess;
 }
 
+static ncclResult_t ncclIbCreateQpMlx5(struct ncclIbQpCreateAttr* createQpAttrs, struct ncclIbQp* qp) {
+  struct ibv_qp_init_attr_ex qpInitAttr;
+  struct mlx5dv_qp_init_attr dvAttr;
+  memset(&qpInitAttr, 0, sizeof(struct ibv_qp_init_attr_ex));
+  memset(&dvAttr, 0 , sizeof(struct mlx5dv_qp_init_attr));
+  qpInitAttr.qp_context = createQpAttrs->qpContext;
+  qpInitAttr.send_cq = createQpAttrs->cq;
+  qpInitAttr.recv_cq = createQpAttrs->cq;
+  qpInitAttr.qp_type = createQpAttrs->type;
+  qpInitAttr.cap.max_recv_wr = createQpAttrs->maxRecvWorkRequest;
+  qpInitAttr.cap.max_send_wr = createQpAttrs->maxSendWorkRequest;
+  qpInitAttr.cap.max_send_sge = 1;
+  qpInitAttr.cap.max_recv_sge = 1;
+  qpInitAttr.cap.max_inline_data = ncclParamIbUseInline() ? sizeof(struct ncclIbSendFifo) : 0;
+
+  qpInitAttr.comp_mask = IBV_QP_INIT_ATTR_PD;
+  qpInitAttr.pd = createQpAttrs->pd;
+
+  if (createQpAttrs->oooRq) {
+    dvAttr.create_flags |= MLX5DV_QP_CREATE_OOO_DP;
+    dvAttr.comp_mask |= MLX5DV_QP_INIT_ATTR_MASK_QP_CREATE_FLAGS;
+  }
+  qp->qp = wrap_mlx5dv_create_qp(createQpAttrs->pd->context, &qpInitAttr, &dvAttr);
+  if (qp->qp == NULL) { WARN("NET/IB: %s: mlx5dv_create_qp failed to create QP: %m", __func__);  return ncclInternalError; }
+  return ncclSuccess;
+}
+
 ncclResult_t ncclIbQpCreate(struct ncclIbQp* qp, struct ncclIbQpCreateAttr* createQpAttrs) {
+  if (createQpAttrs->oooRq) {
+     NCCLCHECK(ncclIbCreateQpMlx5(createQpAttrs, qp));
+     return ncclSuccess;
+  }
   struct ibv_qp_init_attr qpInitAttr;
   memset(&qpInitAttr, 0, sizeof(struct ibv_qp_init_attr));
   qpInitAttr.qp_context = createQpAttrs->qpContext;
@@ -458,8 +494,18 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
     qpCreateAttrs.cq = commDev->base.cq;
     qpCreateAttrs.pd = commDev->base.pd;
     qpCreateAttrs.qpContext = &comm->base.stats;
+
+    if (ibDev->ibProvider == IB_PROVIDER_MLX5 && ncclParamIbOooRq()) {
+      qpCreateAttrs.oooRq = (comm->base.remOooRq && comm->base.localOooRq);
+      if (!qpCreateAttrs.oooRq) {
+        WARN("NET/IB: %s: OOO RQ is force enabled but not supported. device:%s, localOooRq=%d, remOooRq=%d",
+          __func__, ibDev->devName, comm->base.localOooRq, comm->base.remOooRq);
+        return ncclInternalError;
+      }
+    }
+
     NCCLCHECK(ncclIbQpCreate(localQp, &qpCreateAttrs));
-    INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
+    INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p oooRq=%d",
         __func__,
         ibDev->portNum,
         commDev->base.ibDevN,
@@ -468,7 +514,8 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
         ncclNMergedIbDevs,
         localQp->qp->qp_num,
         (uint16_t)ncclParamIbPkey(),
-        commDev->base.pd);
+        commDev->base.pd,
+        qpCreateAttrs.oooRq);
     localQp->devIndex = devIndex;
 
     // Populate the metadata that will be delivered to the remote peer
@@ -566,6 +613,7 @@ ncclResult_t ncclIbConnect(void* ctx, int dev, void* opaqueHandle, void** sendCo
   struct ncclIbCommStage* stage = &handle->stage;
   struct ncclIbSendComm* comm = (struct ncclIbSendComm*)stage->comm;
   int ready;
+
   uint8_t link_layer = IBV_LINK_LAYER_UNSPECIFIED;
   *sendComm = NULL;
 
@@ -609,21 +657,33 @@ ib_connect_check:
   NCCLCHECKGOTO(ncclIbMalloc((void**)&stage->buffer, sizeof(meta)), ret, fail);
   memcpy(stage->buffer, &mergedDev->vProps, sizeof(ncclNetVDeviceProps_t));
 
+  struct ncclIbDevExtraProps exProps;
+  exProps.oooRq = true;
+  for (int i = 0; i < mergedDev->vProps.ndevs; i++) {
+    int ibDevN = mergedDev->vProps.devs[i];
+    exProps.oooRq = exProps.oooRq && ncclIbDevs[ibDevN].oooRqSize;
+  }
+  comm->base.localOooRq = exProps.oooRq;
+  memcpy((char *)stage->buffer + sizeof(ncclNetVDeviceProps_t), &exProps, sizeof(struct ncclIbDevExtraProps));
+
 // In the case of mismatched nDevs, we will make sure that both sides of a logical connection have the same number of RC qps
 ib_send_dev_list:
-  NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_SEND, &comm->base.sock, stage->buffer, sizeof(ncclNetVDeviceProps_t), &stage->offset));
-  if (stage->offset != sizeof(ncclNetVDeviceProps_t)) return ncclSuccess;
+  NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_SEND, &comm->base.sock, stage->buffer, sizeof(ncclNetVDeviceProps_t) + sizeof(struct ncclIbDevExtraProps), &stage->offset));
+  if (stage->offset != (sizeof(ncclNetVDeviceProps_t) + sizeof(struct ncclIbDevExtraProps))) return ncclSuccess;
 
   stage->state = ncclIbCommStateRecvDevList;
   stage->offset = 0;
 
 ib_recv_dev_list:
-  NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_RECV, &comm->base.sock, stage->buffer, sizeof(ncclNetVDeviceProps_t), &stage->offset));
-  if (stage->offset != sizeof(ncclNetVDeviceProps_t)) return ncclSuccess;
+  NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_RECV, &comm->base.sock, stage->buffer, sizeof(ncclNetVDeviceProps_t) + sizeof(struct ncclIbDevExtraProps), &stage->offset));
+  if (stage->offset != (sizeof(ncclNetVDeviceProps_t) + sizeof(struct ncclIbDevExtraProps))) return ncclSuccess;
   stage->offset = 0;
   ncclNetVDeviceProps_t remoteVProps;
   ncclNetCommConfig_t* config;
   memcpy(&remoteVProps, stage->buffer, sizeof(ncclNetVDeviceProps_t));
+  memcpy(&exProps, (char *)stage->buffer + sizeof(ncclNetVDeviceProps_t), sizeof(exProps));
+  comm->base.remOooRq = exProps.oooRq;
+
   mergedDev = ncclIbMergedDevs + dev;
   comm->base.vProps = mergedDev->vProps;
   int localNqps, remoteNqps;
@@ -888,8 +948,23 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     if (rComm->base.resiliency) {
       ncclIbResiliencyDataRqSizeGet(rComm->base.resiliency, devIndex, &qpCreateAttrs.maxRecvWorkRequest);
     }
+    if (ibDev->ibProvider == IB_PROVIDER_MLX5 && ncclParamIbOooRq()) {
+      qpCreateAttrs.oooRq = (rComm->base.remOooRq && rComm->base.localOooRq);
+      // out-of-order recv prerequisite: oooRq is supported on both sides
+      if (!qpCreateAttrs.oooRq) {
+        WARN("NET/IB: %s: OOO RQ is force enabled but not supported on device:%s, localOooRq=%d, remOooRq=%d",
+          __func__, ibDev->devName, rComm->base.localOooRq, rComm->base.remOooRq);
+        return ncclInternalError;
+      }
+      // out-of-order recv prerequisite: oooRq size requirements are met
+      if (ibDev->oooRqSize < qpCreateAttrs.maxRecvWorkRequest) {
+        WARN("NET/IB: %s: OOO RQ is force enabled but size %u is less than the required recv work request size %u on device:%s",
+          __func__, ibDev->oooRqSize, qpCreateAttrs.maxRecvWorkRequest, ibDev->devName);
+        return ncclInternalError;
+      }
+    }
     NCCLCHECK(ncclIbQpCreate(localQp, &qpCreateAttrs));
-    INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
+    INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p oooRq=%d",
         __func__,
         ibDev->portNum,
         rCommDev->base.ibDevN,
@@ -898,7 +973,8 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
         ncclNMergedIbDevs,
         localQp->qp->qp_num,
         (uint16_t)ncclParamIbPkey(),
-        rCommDev->base.pd);
+        rCommDev->base.pd,
+        qpCreateAttrs.oooRq);
 
     localQpInfo->qpn      = localQp->qp->qp_num;
     localQpInfo->devIndex = localQp->devIndex;
@@ -979,7 +1055,7 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
           rCommDev->gpuFlush.qp.qp->qp_num,
           (uint16_t)ncclParamIbPkey(),
           rCommDev->base.pd);
-  
+
       ncclIbQp* flushQp = &rCommDev->gpuFlush.qp;
 
       // Transition the QP to INIT state
@@ -1070,6 +1146,7 @@ ncclResult_t ncclIbAccept(void* listenComm, void** recvComm, ncclNetDeviceHandle
 
   // Alloc stage->buffer here to be used for all following steps
   struct ncclIbConnectionMetadata remMeta;
+  struct ncclIbDevExtraProps exProps;
   stage->offset = 0;
   NCCLCHECK(ncclIbMalloc((void**)&stage->buffer, sizeof(remMeta)));
 
@@ -1081,14 +1158,17 @@ ib_accept_check:
 
 // In the case of mismatched nDevs, we will make sure that both sides of a logical connection have the same number of RC qps
 ib_recv_dev_list:
-  NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_RECV, &rComm->base.sock, stage->buffer, sizeof(ncclNetVDeviceProps_t), &stage->offset));
-  if (stage->offset != sizeof(ncclNetVDeviceProps_t)) return ncclSuccess;
+  NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_RECV, &rComm->base.sock, stage->buffer, sizeof(ncclNetVDeviceProps_t) + sizeof(struct ncclIbDevExtraProps), &stage->offset));
+  if (stage->offset != (sizeof(ncclNetVDeviceProps_t) + sizeof(struct ncclIbDevExtraProps))) return ncclSuccess;
   ncclNetVDeviceProps_t remoteVProps;
   memcpy(&remoteVProps, stage->buffer, sizeof(ncclNetVDeviceProps_t));
   if (lComm->dev >= ncclNMergedIbDevs) {
     WARN("NET/IB : Trying to use non-existent virtual device %d", lComm->dev);
     return ncclInternalError;
   }
+
+  memcpy(&exProps, (char *)stage->buffer + sizeof(ncclNetVDeviceProps_t), sizeof(exProps));
+  rComm->base.remOooRq = exProps.oooRq;
 
   // Reduce the physical device list and store in the connection base
   struct ncclIbMergedDev* mergedDev;
@@ -1110,9 +1190,17 @@ ib_recv_dev_list:
   stage->offset = 0;
   stage->state = ncclIbCommStateSendDevList;
 
+  exProps.oooRq = true;
+  for (int i = 0; i < mergedDev->vProps.ndevs; i++) {
+    int ibDevN = mergedDev->vProps.devs[i];
+    exProps.oooRq = exProps.oooRq && ncclIbDevs[ibDevN].oooRqSize;
+  }
+  rComm->base.localOooRq = exProps.oooRq;
+  memcpy((char *)stage->buffer + sizeof(ncclNetVDeviceProps_t), &exProps, sizeof(struct ncclIbDevExtraProps));
+
 ib_send_dev_list:
-  NCCLCHECKGOTO(ncclSocketProgress(NCCL_SOCKET_SEND, &rComm->base.sock, stage->buffer, sizeof(ncclNetVDeviceProps_t), &stage->offset), ret, fail);
-  if (stage->offset != sizeof(ncclNetVDeviceProps_t)) return ncclSuccess;
+  NCCLCHECKGOTO(ncclSocketProgress(NCCL_SOCKET_SEND, &rComm->base.sock, stage->buffer, sizeof(ncclNetVDeviceProps_t) + sizeof(struct ncclIbDevExtraProps), &stage->offset), ret, fail);
+  if (stage->offset != (sizeof(ncclNetVDeviceProps_t) + sizeof(struct ncclIbDevExtraProps))) return ncclSuccess;
 
   stage->offset = 0;
   stage->state = ncclIbCommStateRecv;

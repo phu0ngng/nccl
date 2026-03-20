@@ -928,6 +928,17 @@ Size in bytes, the default value is 8192.
 
 Setting it above NCCL_BUFFSIZE will disable the use of adaptive routing completely.
 
+NCCL_IB_OOO_RQ
+--------------------
+(since 2.30)
+
+Allowing Receive WRs on the receiver side of the QP to be consumed out-of-order.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Disabled (0) by default.
+Set to 1 to force enable out-of-order consumption of Receive WRs on receiver side.
+
 NCCL_IB_QPS_PER_CONNECTION
 --------------------------
 (since 2.10)

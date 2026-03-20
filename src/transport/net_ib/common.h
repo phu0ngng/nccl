@@ -37,6 +37,11 @@
 extern char ncclIbIfName[MAX_IF_NAME_SIZE+1];
 extern union ncclSocketAddress ncclIbIfAddr;
 
+enum ncclIbRequestMatchingScheme {
+  BY_INDEX=0,
+  BY_ID=1,
+};
+
 struct ncclIbMr {
   uintptr_t addr;
   size_t pages;
@@ -87,6 +92,7 @@ struct alignas(64) ncclIbDev {
   float latency;
   struct ncclIbMrCache mrCache;
   int ar; // ADAPTIVE_ROUTING
+  uint32_t oooRqSize;  // valid only when ar=1
   struct ibv_port_attr portAttr;
   struct ncclIbStats stats;
   int dmaBufSupported;
@@ -335,6 +341,9 @@ struct alignas(32) ncclIbNetCommBase {
   int ready;
   // Track necessary remDevInfo here
   int nRemDevs;
+  bool remOooRq;
+  bool localOooRq;
+  int recvMatchingScheme;
   int nDataQps;
   struct ncclIbDevInfo remDevs[NCCL_IB_MAX_DEVS_PER_NIC];
   // statistics about the comm

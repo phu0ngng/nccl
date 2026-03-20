@@ -39,6 +39,15 @@ for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_g
   run_command "${func}_all_sizes" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts"
 done
 
+if [ "$RUN_DDP_TEST" == "1" ];
+then
+  for func in all_reduce_perf alltoall_perf all_gather_perf; do
+    run_command "${func}_all_sizes_ddp_force_enable" $RUN_MODE $NGPUS "" "NCCL_IB_ADAPTIVE_ROUTING=1 NCCL_IB_OOO_RQ=1" "$NCCL_HOME/test/perf/$func" "$range $opts"
+    run_command "${func}_all_sizes_ddp_force_enable_no_p2p" $RUN_MODE $NGPUS "" "NCCL_P2P_DISABLE=1 NCCL_IB_ADAPTIVE_ROUTING=1 NCCL_IB_OOO_RQ=1" "$NCCL_HOME/test/perf/$func" "$range $opts"
+    run_command "${func}_all_sizes_ddp_force_enable_no_mnnvl" $RUN_MODE $NGPUS "" "NCCL_MNNVL_ENABLE=0 NCCL_IB_ADAPTIVE_ROUTING=1 NCCL_IB_OOO_RQ=1" "$NCCL_HOME/test/perf/$func" "$range $opts"
+  done
+fi
+
 if [ "$RMA" == "1" ];
 then
   for func in all_gather_perf alltoall_perf broadcast_perf gather_perf scatter_perf sendrecv_perf; do

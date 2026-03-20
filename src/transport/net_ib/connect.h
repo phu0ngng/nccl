@@ -14,6 +14,7 @@
 struct ncclIbQpCreateAttr {
   void* qpContext;
   enum ibv_qp_type type;
+  bool oooRq;
   struct ibv_cq* cq;
   struct ibv_pd* pd;
   uint32_t maxRecvWorkRequest;

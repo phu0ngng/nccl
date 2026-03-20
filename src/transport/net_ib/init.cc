@@ -11,6 +11,9 @@ NCCL_PARAM(IbPciRelaxedOrdering, "IB_PCI_RELAXED_ORDERING", 2);
 NCCL_PARAM(IbAdaptiveRouting, "IB_ADAPTIVE_ROUTING", -2);
 NCCL_PARAM(IbDataDirect,"IB_DATA_DIRECT",1);
 
+// default to 0 to disable ooo rq, if set to 1, ooo rq will be enabled or failed
+NCCL_PARAM(IbOooRq,"IB_OOO_RQ", 0)
+
 static std::mutex ncclIbMutex;
 
 // With ncclNet_v11_t the NCCL core initializes the network plugin per-communicator
@@ -24,6 +27,8 @@ NCCL_PARAM(IbDisable, "IB_DISABLE", 0);
 NCCL_PARAM(IbMergeVfs, "IB_MERGE_VFS", 1);
 NCCL_PARAM(IbMergeNics, "IB_MERGE_NICS", 1);
 NCCL_PARAM(IbDevicePciOrder, "IB_DEVICE_PCI_ORDER", 1);
+
+extern int64_t ncclParamIbArThreshold();
 
 // Returns 0 if this is the path of two VFs of the same physical device
 static int ncclIbMatchVfPath(char* path1, char* path2) {
@@ -140,6 +145,35 @@ failure:
   return false;
 }
 
+extern int64_t ncclParamIbPrepostReceiveWorkRequests();
+extern int64_t ncclParamIbReceiverSideMatchingScheme();
+
+static ncclResult_t ncclIbQueryOooRqSize(struct ibv_context* ibvCtx, const char *devName, uint32_t* oooRqSize) {
+  ncclResult_t ret;
+  if (!oooRqSize) return ncclInvalidArgument;
+  *oooRqSize = 0;
+
+  if (ncclParamIbOooRq() == 0) return ncclSuccess;
+
+  // out-of-order recv prerequisite: device capability
+  struct mlx5dv_context dvCtx;
+  *oooRqSize = 0;
+  dvCtx.comp_mask = MLX5DV_CONTEXT_MASK_OOO_RECV_WRS;
+  NCCLCHECKGOTO(wrap_mlx5dv_query_device(ibvCtx, &dvCtx), ret, fail);
+  if ((dvCtx.comp_mask & MLX5DV_CONTEXT_MASK_OOO_RECV_WRS) && dvCtx.ooo_recv_wrs_caps.max_rc > 0) {
+    *oooRqSize = dvCtx.ooo_recv_wrs_caps.max_rc;
+  }
+
+  if (*oooRqSize == 0) {
+    WARN("NET/IB: OOO RQ is force enabled but oooRqSize is 0 on device %s, mask=%u", devName, (dvCtx.comp_mask & MLX5DV_CONTEXT_MASK_OOO_RECV_WRS) ? 1 : 0);
+    goto fail;
+  }
+
+  return ncclSuccess;
+fail:
+  return ncclInternalError;
+}
+
 ncclResult_t ncclIbMakeVDeviceInternal(int* d, ncclNetVDeviceProps_t* props) {
   if (ncclParamIbMergeNics() == 0 && props->ndevs > 1) {
     INFO(NCCL_NET, "NET/IB : Skipping makeVDevice, NCCL_IB_MERGE_NICS=0");
@@ -218,6 +252,7 @@ ncclResult_t ncclIbFinalizeDevices(void) {
   return ncclSuccess;
 }
 
+extern int64_t ncclIbArThreshold;
 ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
   ncclResult_t ret = ncclSuccess;
   if (netRefCount++) return ret;
@@ -265,7 +300,11 @@ ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallba
         }
         char dataDirectDevicePath[PATH_MAX] = "/sys";
         int devCount = /*undefined*/-1, devOffset = 0;
+        uint32_t oooRqSize = 0;
         enum ncclIbProvider ibProvider = wrap_mlx5dv_is_supported(devices[d]) ? IB_PROVIDER_MLX5 : IB_PROVIDER_NONE;
+        if (ibProvider == IB_PROVIDER_MLX5 && ncclParamIbOooRq()) {
+          NCCLCHECKGOTO(ncclIbQueryOooRqSize(context, devices[d]->name, &oooRqSize), ret, fail);
+        }
 
         int nPorts = 0;
         struct ibv_device_attr devAttr;
@@ -347,9 +386,16 @@ ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallba
               ncclIbDevs[ncclNIbDevs].ar = (portAttr.link_layer == IBV_LINK_LAYER_INFINIBAND) ? 1 : 0;
               if (ncclParamIbAdaptiveRouting() != -2) ncclIbDevs[ncclNIbDevs].ar = ncclParamIbAdaptiveRouting();
 
-              INFO(NCCL_NET, "NET/IB: [%d] %s:%s:%d/%s provider=%s speed=%d context=%p pciPath=%s ar=%d", d, devices[d]->name, devices[d]->dev_name,
+              // out-of-order recv prerequisite: ar enabled
+              ncclIbDevs[ncclNIbDevs].oooRqSize = (ncclIbDevs[ncclNIbDevs].ar > 0) ? oooRqSize : 0;
+              if (ncclParamIbOooRq() && ncclIbDevs[ncclNIbDevs].ar == 0) {
+                WARN("NET/IB: OOO RQ is force enabled but AR is disabled on device %s", devices[d]->name);
+                ret = ncclInternalError; goto fail;
+              }
+
+              INFO(NCCL_NET, "NET/IB: [%d] %s:%s:%d/%s provider=%s speed=%d context=%p pciPath=%s ar=%d oooRqSize=%d", d, devices[d]->name, devices[d]->dev_name,
                    ncclIbDevs[ncclNIbDevs].portNum, NCCL_IB_LLSTR(portAttr.link_layer), ibProviderName[ncclIbDevs[ncclNIbDevs].ibProvider], ncclIbDevs[ncclNIbDevs].speed, context,
-                   ncclIbDevs[ncclNIbDevs].pciPath, ncclIbDevs[ncclNIbDevs].ar);
+                   ncclIbDevs[ncclNIbDevs].pciPath, ncclIbDevs[ncclNIbDevs].ar, ncclIbDevs[ncclNIbDevs].oooRqSize);
 
               ncclIbAsyncThread = std::thread(ncclIbAsyncThreadMain, ncclIbDevs + ncclNIbDevs);
               ncclSetThreadName(ncclIbAsyncThread, "NCCL IbAsync %2d", ncclNIbDevs);
@@ -369,6 +415,15 @@ ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallba
     }
     // Determine whether RELAXED_ORDERING is enabled and possible
     ncclIbRelaxedOrderingEnabled = ncclIbRelaxedOrderingCapable();
+
+    // Default value for ncclIbArThreshold is 8192
+    if (ncclParamIbArThreshold() != -2) {
+      if (ncclParamIbOooRq()) {
+        INFO(NCCL_NET, "NET/IB: OOO RQ is enabled, AR threshold will be ignored.");
+      } else {
+        ncclIbArThreshold = ncclParamIbArThreshold();  // set explicitly by user
+      }
+    }
     // sort devices to ensure a consistent order across nodes
     if (ncclParamIbDevicePciOrder()) qsort(ncclIbDevs, ncclNIbDevs, sizeof(struct ncclIbDev), ncclIbCompareDevs);
     // Once sorted, get the realPort ID and create the virtual devices.

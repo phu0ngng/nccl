@@ -74,6 +74,7 @@ variables:
   RUN_INSPECTOR_TESTS: "0"
   RUN_PERF_REGRESSION: "0"
   RUN_NCCL4PY_CI: "0"
+  RUN_DDP_TEST: "0"
   # By default skip certain tests
   SKIP_MULTI_RANK_GPU: "1"
 
@@ -3370,6 +3371,7 @@ perftest-multi-bia:
     GRAPH: 0
     SKIP_FT_TEST: 1
     SKIP_NIC_FUSION: 1
+    RUN_DDP_TEST: 1
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     # Re-enable after resolving https://nvbugspro.nvidia.com/bug/5793707
     WORKAROUND_NVBUG_5793707: 1
