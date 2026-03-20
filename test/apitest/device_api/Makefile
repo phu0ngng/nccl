@@ -47,7 +47,7 @@ clean: gtest.clean
 ${DST_DIR}/device_api_test: ${GTEST_LIBS} ${OBJ_FILES}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	${NVCC} -o $@ ${NVCUFLAGS} ${NVLDFLAGS} $^ -lnccl
+	${NVCC} -o $@ ${NVCUFLAGS} ${NVLDFLAGS} $^ -lcuda -lnccl
 
 # Compile .cu to .o
 ${DST_DIR}/%.o: %.cu

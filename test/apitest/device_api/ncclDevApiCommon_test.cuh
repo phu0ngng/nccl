@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 #include <nccl.h>
 #include <nccl_device.h>
+#include "segmented_allocator.h"
 
 #include <map>
 #include <string>
