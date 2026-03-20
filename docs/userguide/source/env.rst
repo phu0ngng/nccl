@@ -695,6 +695,8 @@ Value accepted
 ^^^^^^^^^^^^^^
 A path to an accessible file describing part or all of the topology.
 
+Note: For multi-node NVLink systems, despite NCCL_TOPO_DUMP_FILE producing a file with the full NVLink domain topology, NCCL_TOPO_FILE should only include the single node topology.
+
 NCCL_TOPO_DUMP_FILE
 -------------------
 (since 2.6)
@@ -704,6 +706,8 @@ Path to a file to dump the XML topology to after detection.
 Value accepted
 ^^^^^^^^^^^^^^
 A path to a file which will be created or overwritten.
+
+Note: For multi-node NVLink systems, the dumped file will contain the full NVLink domain topology. 
 
 NCCL_SET_THREAD_NAME
 --------------------
