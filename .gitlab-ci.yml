@@ -374,41 +374,6 @@ build-cmake:
 ## Stage: setup - Start...
 ##
 
-fairshare-eos:
-  stage: setup
-  extends:
-    - .eos
-  rules:
-    - <<: *pre_submit_rule
-    - if: $RUN_ON_EOS == "1"
-      when: always
-    - when: never
-  script:
-    - ./test/scripts/gitlab-runner-fairshare.sh
-
-fairshare-cw-dfw:
-  stage: setup
-  extends:
-    - .cw-dfw
-  rules:
-    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
-    #   when: always
-    - when: never
-  script:
-    - ./test/scripts/gitlab-runner-fairshare.sh
-
-fairshare-draco-oci:
-  stage: setup
-  extends:
-    - .draco-oci
-  rules:
-    - <<: *pre_submit_rule
-    - if: $RUN_ON_DRACO_OCI == "1"
-      when: always
-    - when: never
-  script:
-    - ./test/scripts/gitlab-runner-fairshare.sh
-
 setup-AWS-H100-EFA:
   stage: setup
   extends:
