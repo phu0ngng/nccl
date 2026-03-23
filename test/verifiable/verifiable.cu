@@ -918,7 +918,7 @@ __host__ __device__ void genInput(
   // limit to two ranks contributing non-zero values. This way there is no ambiguity
   // of summation.
   int r = shuffleRank(rank_n, rank_me, rng);
-  uint64_t m = (rng*(r ? 0xbeef : 1)) & ((1ul<<FloatLayout<T>::mantissa_bits)-1);
+  uint64_t m = (rng*(r ? 0xbeef : 1)) & ((1ull<<FloatLayout<T>::mantissa_bits)-1);
   ans = r < 2 ? castTo<T>(1+m) : castTo<T>((uint64_t)0);
 }
 
@@ -928,8 +928,8 @@ __host__ __device__ void genOutput(
     std::false_type /*integral*/
   ) {
   shuffleRank(rank_n, -1, rng);
-  uint64_t m0 = (rng*(0 ? 0xbeef : 1)) & ((1ul<<FloatLayout<T>::mantissa_bits)-1);
-  uint64_t m1 = (rng*(1 ? 0xbeef : 1)) & ((1ul<<FloatLayout<T>::mantissa_bits)-1);
+  uint64_t m0 = (rng*(0 ? 0xbeef : 1)) & ((1ull<<FloatLayout<T>::mantissa_bits)-1);
+  uint64_t m1 = (rng*(1 ? 0xbeef : 1)) & ((1ull<<FloatLayout<T>::mantissa_bits)-1);
   if (rank_n == 1) {
     ans = castTo<T>(1+m0);
   } else {
