@@ -30,7 +30,7 @@
 #include "multimem_ops.h"
 
 void ReduceScatterGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
-  size_t base = (count/nranks) & -(16/eltSize);
+  size_t base = (count/nranks) & ~(16/eltSize - 1);
   *sendcount = base*nranks;
   *recvcount = base;
   *sendInplaceOffset = 0;

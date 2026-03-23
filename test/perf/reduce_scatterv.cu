@@ -11,7 +11,7 @@
 //#define TRIANGULAR
 
 void ReduceScattervGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
-    *recvcount = (count/nranks) & -(16/eltSize);
+    *recvcount = (count/nranks) & ~(16/eltSize - 1);
     *sendcount = (*recvcount)*nranks;
     *sendInplaceOffset = 0;
     *recvInplaceOffset = *recvcount;

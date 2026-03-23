@@ -10,7 +10,7 @@
 #define ALIGN 4
 
 void HyperCubeGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
-  size_t base = (count/nranks) & -(16/eltSize);
+  size_t base = (count/nranks) & ~(16/eltSize - 1);
   *sendcount = base;
   *recvcount = base*nranks;
   *sendInplaceOffset = base;

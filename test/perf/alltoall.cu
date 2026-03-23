@@ -12,7 +12,7 @@
 #endif
 
 void AlltoAllGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
-  *paramcount = (count/nranks) & -(16/eltSize);
+  *paramcount = (count/nranks) & ~(16/eltSize - 1);
   *sendcount = nranks*(*paramcount);
   *recvcount = *sendcount;
   *sendInplaceOffset = 0;

@@ -8,7 +8,7 @@
 #include "common.h"
 
 void GatherGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
-  *sendcount = (count/nranks) & -(16/eltSize);
+  *sendcount = (count/nranks) & ~(16/eltSize - 1);
   *recvcount = (*sendcount)*nranks;
   *sendInplaceOffset = *sendcount;
   *recvInplaceOffset = 0;
