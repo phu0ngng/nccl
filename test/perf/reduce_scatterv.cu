@@ -43,7 +43,7 @@ testResult_t ReduceScattervInitData(struct threadArgs* args, ncclDataType_t type
   return testSuccess;
 }
 
-void ReduceScattervGetBw(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks) {
+void ReduceScattervGetBw(size_t count, size_t typesize, double sec, double* algBw, double* busBw, int nranks) {
   double baseBw = (double)(count * typesize * (nranks - 1)) / 1.0E9 / sec;
 #ifdef TRIANGULAR
   const double halfSize = (((double)nranks*nranks+1)/2) / (nranks*nranks);

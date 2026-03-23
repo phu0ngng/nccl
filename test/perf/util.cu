@@ -68,12 +68,12 @@ size_t state_n = 0;   // # of items in the stack.
 
 // profiler event
 struct groupEvent {
-  int type;
+  uint64_t type;
   std::atomic<int> count;
 };
 
 struct taskEvent {
-  int type;
+  uint64_t type;
   std::atomic<int> count;
   std::atomic<bool> ready;
   union {
@@ -90,7 +90,7 @@ struct taskEvent {
 };
 
 struct proxyEvent {
-  int type;
+  uint64_t type;
   std::atomic<int> count;
   std::atomic<bool> ready;
   int chunkSize;
@@ -694,7 +694,7 @@ testResult_t writeDeviceReport(size_t *maxMem, int localRank, int proc, int tota
     jsonKey("minimum_bytes"); jsonSize_t(minBytes);
     jsonKey("maximum_bytes"); jsonSize_t(maxBytes);
     if(stepFactor > 1) {
-      jsonKey("step_factor");   jsonInt(stepFactor);
+      jsonKey("step_factor");   jsonSize_t(stepFactor);
     }
     else {
       jsonKey("step_bytes");  jsonSize_t(stepBytes);
@@ -840,7 +840,8 @@ void writeResultFooter(const int errors[], const double bw[], double check_avg_b
   }
 }
 
-std::string getMemString(double amount) {
+std::string getMemString(int64_t amountBytes) {
+  double amount = static_cast<double>(amountBytes);
   std::string postfix = " B";
   if (abs(amount) >= 1024.0*1024.0*1024.0) {
     postfix = " GB";

@@ -1216,7 +1216,7 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
     /* users only set a subset of ft tests. */
     char* tmp_list;
     char* token;
-    int len = strlen(ft_list);
+    size_t len = strlen(ft_list);
 
     tmp_list = (char*)malloc(len + 1);
     memcpy(tmp_list, ft_list, len + 1);

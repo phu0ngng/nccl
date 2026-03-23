@@ -797,7 +797,7 @@ static testResult_t getIteration(size_t nbytes, int* itersPtr) {
     if (nbytes == 0)
       *itersPtr = iters;
     else
-      *itersPtr = std::max<size_t>(std::min<size_t>((size_t)iters, tbytes / nbytes), 1UL);
+      *itersPtr = static_cast<int>(std::max<size_t>(std::min<size_t>((size_t)iters, tbytes / nbytes), 1UL));
   }
   return testSuccess;
 }

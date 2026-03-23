@@ -485,7 +485,7 @@ static void AlltoAllvPrintRankBandwidths(int nranks, size_t total_bytes, double 
   }
 }
 
-void AlltoAllvGetBw(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks) {
+void AlltoAllvGetBw(size_t count, size_t typesize, double sec, double* algBw, double* busBw, int nranks) {
   size_t total_bytes = count * nranks * typesize;
   size_t max_sendcount, max_recvcount;
   AlltoAllvComputeMaxCounts(&max_sendcount, &max_recvcount, (size_t)typesize, nranks, total_bytes);

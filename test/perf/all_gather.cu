@@ -67,7 +67,7 @@ testResult_t AllGatherInitData(struct threadArgs* args, ncclDataType_t type, ncc
   return testSuccess;
 }
 
-void AllGatherGetBw(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks) {
+void AllGatherGetBw(size_t count, size_t typesize, double sec, double* algBw, double* busBw, int nranks) {
   double baseBw = (double)(count * typesize * nranks) / 1.0E9 / sec;
 
   *algBw = baseBw;

@@ -46,7 +46,7 @@ testResult_t AlltoAllInitData(struct threadArgs* args, ncclDataType_t type, nccl
   return testSuccess;
 }
 
-void AlltoAllGetBw(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks) {
+void AlltoAllGetBw(size_t count, size_t typesize, double sec, double* algBw, double* busBw, int nranks) {
   double baseBw = (double)(count * nranks * typesize) / 1.0E9 / sec;
 
   *algBw = baseBw;

@@ -63,7 +63,7 @@ testResult_t ReduceScatterInitData(struct threadArgs* args, ncclDataType_t type,
   return testSuccess;
 }
 
-void ReduceScatterGetBw(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks) {
+void ReduceScatterGetBw(size_t count, size_t typesize, double sec, double* algBw, double* busBw, int nranks) {
   double baseBw = (double)(count * typesize * nranks) / 1.0E9 / sec;
 
   *algBw = baseBw;

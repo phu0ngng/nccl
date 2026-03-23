@@ -38,7 +38,7 @@ testResult_t ScatterInitData(struct threadArgs* args, ncclDataType_t type, ncclR
   return testSuccess;
 }
 
-void ScatterGetBw(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks) {
+void ScatterGetBw(size_t count, size_t typesize, double sec, double* algBw, double* busBw, int nranks) {
   double baseBw = (double)(count * nranks * typesize) / 1.0E9 / sec;
 
   *algBw = baseBw;
