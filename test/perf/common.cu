@@ -1937,7 +1937,7 @@ int main(int argc, char* argv[], char **envp) {
   return 0;
 }
 
-// parse int for base 2/10/16, will ignore first whitespaces
+#ifdef MPI_SUPPORT
 static bool parseInt(char *s, int *num) {
   char *p = NULL;
   if (!s || !num)
@@ -1954,6 +1954,7 @@ static bool parseInt(char *s, int *num) {
     return false;
   return true;
 }
+#endif
 
 testResult_t run() {
   int totalProcs = 1, proc = 0, ncclProcs = 1, ncclProc = 0, color = 0;
