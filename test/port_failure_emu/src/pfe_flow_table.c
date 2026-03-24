@@ -1,7 +1,7 @@
 /**
  * @file pfe_flow_table.c
  * @brief Flow table operations for Port Failure Emulation Library
- * 
+ *
  * Implements creation and destruction of flow tables, flow groups, and flow table entries.
  */
 
@@ -130,26 +130,26 @@ pfe_internal_result_t pfe_create_flow_entry(struct pfe_device_ctx *dev_ctx,
 pfe_internal_result_t pfe_create_device_flow_tables(struct pfe_device_ctx *dev_ctx,
                                                      pfe_mode_t mode) {
     // Create flow tables for RDMA mode
-    PFE_CHECK(pfe_create_flow_table(dev_ctx, &dev_ctx->tx_rdma.flow_table, 
+    PFE_CHECK(pfe_create_flow_table(dev_ctx, &dev_ctx->tx_rdma.flow_table,
                                      &dev_ctx->tx_rdma.flow_table_id,
-                                     MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_TX_RDMA, 
+                                     MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_TX_RDMA,
                                      "TX RDMA"));
 
-    PFE_CHECK(pfe_create_flow_table(dev_ctx, &dev_ctx->rx_rdma.flow_table, 
+    PFE_CHECK(pfe_create_flow_table(dev_ctx, &dev_ctx->rx_rdma.flow_table,
                                      &dev_ctx->rx_rdma.flow_table_id,
-                                     MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_RX_RDMA, 
+                                     MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_RX_RDMA,
                                      "RX RDMA"));
 
     // Create flow tables for non-RDMA (all) mode if required
     if (mode == PFE_MODE_ALL) {
-        PFE_CHECK(pfe_create_flow_table(dev_ctx, &dev_ctx->tx.flow_table, 
+        PFE_CHECK(pfe_create_flow_table(dev_ctx, &dev_ctx->tx.flow_table,
                                          &dev_ctx->tx.flow_table_id,
-                                         MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_TX, 
+                                         MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_TX,
                                          "TX ALL"));
 
-        PFE_CHECK(pfe_create_flow_table(dev_ctx, &dev_ctx->rx.flow_table, 
+        PFE_CHECK(pfe_create_flow_table(dev_ctx, &dev_ctx->rx.flow_table,
                                          &dev_ctx->rx.flow_table_id,
-                                         MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_RX, 
+                                         MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_RX,
                                          "RX ALL"));
     }
 
@@ -159,29 +159,29 @@ pfe_internal_result_t pfe_create_device_flow_tables(struct pfe_device_ctx *dev_c
 pfe_internal_result_t pfe_create_device_flow_groups(struct pfe_device_ctx *dev_ctx,
                                                      pfe_mode_t mode) {
     // Create flow groups for RDMA mode
-    PFE_CHECK(pfe_create_flow_group(dev_ctx, &dev_ctx->tx_rdma.flow_group, 
+    PFE_CHECK(pfe_create_flow_group(dev_ctx, &dev_ctx->tx_rdma.flow_group,
                                      &dev_ctx->tx_rdma.flow_group_id,
-                                     dev_ctx->tx_rdma.flow_table_id, 
+                                     dev_ctx->tx_rdma.flow_table_id,
                                      MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_TX_RDMA,
                                      "TX RDMA"));
 
-    PFE_CHECK(pfe_create_flow_group(dev_ctx, &dev_ctx->rx_rdma.flow_group, 
+    PFE_CHECK(pfe_create_flow_group(dev_ctx, &dev_ctx->rx_rdma.flow_group,
                                      &dev_ctx->rx_rdma.flow_group_id,
-                                     dev_ctx->rx_rdma.flow_table_id, 
+                                     dev_ctx->rx_rdma.flow_table_id,
                                      MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_RX_RDMA,
                                      "RX RDMA"));
 
     // Create flow groups for non-RDMA (all) mode if required
     if (mode == PFE_MODE_ALL) {
-        PFE_CHECK(pfe_create_flow_group(dev_ctx, &dev_ctx->tx.flow_group, 
+        PFE_CHECK(pfe_create_flow_group(dev_ctx, &dev_ctx->tx.flow_group,
                                          &dev_ctx->tx.flow_group_id,
-                                         dev_ctx->tx.flow_table_id, 
+                                         dev_ctx->tx.flow_table_id,
                                          MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_TX,
                                          "TX ALL"));
 
-        PFE_CHECK(pfe_create_flow_group(dev_ctx, &dev_ctx->rx.flow_group, 
+        PFE_CHECK(pfe_create_flow_group(dev_ctx, &dev_ctx->rx.flow_group,
                                          &dev_ctx->rx.flow_group_id,
-                                         dev_ctx->rx.flow_table_id, 
+                                         dev_ctx->rx.flow_table_id,
                                          MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_RX,
                                          "RX ALL"));
     }
@@ -192,34 +192,34 @@ pfe_internal_result_t pfe_create_device_flow_groups(struct pfe_device_ctx *dev_c
 pfe_internal_result_t pfe_create_device_flow_entries(struct pfe_device_ctx *dev_ctx,
                                                       pfe_mode_t mode) {
     // Create flow table entries for RDMA mode
-    PFE_CHECK(pfe_create_flow_entry(dev_ctx, &dev_ctx->tx_rdma.flow_table_entries, 
+    PFE_CHECK(pfe_create_flow_entry(dev_ctx, &dev_ctx->tx_rdma.flow_table_entries,
                                      dev_ctx->tx_rdma.flow_group_id,
-                                     dev_ctx->tx_rdma.flow_table_id, 
+                                     dev_ctx->tx_rdma.flow_table_id,
                                      MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_TX_RDMA,
-                                     &dev_ctx->tx_rdma.flow_table_entry_size, 
+                                     &dev_ctx->tx_rdma.flow_table_entry_size,
                                      "TX RDMA"));
 
-    PFE_CHECK(pfe_create_flow_entry(dev_ctx, &dev_ctx->rx_rdma.flow_table_entries, 
+    PFE_CHECK(pfe_create_flow_entry(dev_ctx, &dev_ctx->rx_rdma.flow_table_entries,
                                      dev_ctx->rx_rdma.flow_group_id,
-                                     dev_ctx->rx_rdma.flow_table_id, 
+                                     dev_ctx->rx_rdma.flow_table_id,
                                      MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_RX_RDMA,
-                                     &dev_ctx->rx_rdma.flow_table_entry_size, 
+                                     &dev_ctx->rx_rdma.flow_table_entry_size,
                                      "RX RDMA"));
 
     // Create flow table entries for non-RDMA (all) mode if required
     if (mode == PFE_MODE_ALL) {
-        PFE_CHECK(pfe_create_flow_entry(dev_ctx, &dev_ctx->tx.flow_table_entries, 
+        PFE_CHECK(pfe_create_flow_entry(dev_ctx, &dev_ctx->tx.flow_table_entries,
                                          dev_ctx->tx.flow_group_id,
-                                         dev_ctx->tx.flow_table_id, 
+                                         dev_ctx->tx.flow_table_id,
                                          MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_TX,
-                                         &dev_ctx->tx.flow_table_entry_size, 
+                                         &dev_ctx->tx.flow_table_entry_size,
                                          "TX ALL"));
 
-        PFE_CHECK(pfe_create_flow_entry(dev_ctx, &dev_ctx->rx.flow_table_entries, 
+        PFE_CHECK(pfe_create_flow_entry(dev_ctx, &dev_ctx->rx.flow_table_entries,
                                          dev_ctx->rx.flow_group_id,
-                                         dev_ctx->rx.flow_table_id, 
+                                         dev_ctx->rx.flow_table_id,
                                          MLX5_CREATE_FLOW_TABLE_IN_TABLE_TYPE_NIC_RX,
-                                         &dev_ctx->rx.flow_table_entry_size, 
+                                         &dev_ctx->rx.flow_table_entry_size,
                                          "RX ALL"));
     }
 
@@ -251,7 +251,7 @@ void pfe_destroy_flow_table_resources(struct pfe_flow_table_resources *resources
     if (!resources) return;
 
     // Destroy flow table entries
-    destroy_flow_entries(resources->flow_table_entries, 
+    destroy_flow_entries(resources->flow_table_entries,
                         resources->flow_table_entry_size);
     resources->flow_table_entries = NULL;
     resources->flow_table_entry_size = 0;

@@ -1,7 +1,7 @@
 /**
  * @file pfe_device.c
  * @brief Device management for Port Failure Emulation Library
- * 
+ *
  * Implements per-device activation/deactivation and status query functions.
  */
 
@@ -39,7 +39,7 @@ pfe_internal_result_t pfe_init_device(struct pfe_device_ctx *dev_ctx,
     dev_ctx->ibv_dev = ibv_dev;
     dev_ctx->is_active = false;
     dev_ctx->is_initialized = false;
-    strncpy(dev_ctx->device_name, ibv_get_device_name(ibv_dev), 
+    strncpy(dev_ctx->device_name, ibv_get_device_name(ibv_dev),
             sizeof(dev_ctx->device_name) - 1);
 
     // Open device with DevX support

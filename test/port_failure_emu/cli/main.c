@@ -1,7 +1,7 @@
 /**
  * @file port_failure_emu_cli.c
  * @brief Command-line interface for Port Failure Emulation Library
- * 
+ *
  * This CLI tool provides a simple interface to activate port failure emulation
  * on InfiniBand devices for testing purposes.
  */

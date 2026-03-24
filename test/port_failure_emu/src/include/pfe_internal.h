@@ -1,7 +1,7 @@
 /**
  * @file pfe_internal.h
  * @brief Internal definitions for Port Failure Emulation Library
- * 
+ *
  * This file contains internal structures and function declarations that are
  * not exposed to library users. Only include this in library implementation files.
  */
@@ -56,7 +56,7 @@ static bool log_level_set = false;
 static pfe_log_level_t config_level = PFE_LOG_WARN;
 
 // Simple logging function (no context needed)
-static inline void pfe_log(pfe_log_level_t level, const char *file, int line, 
+static inline void pfe_log(pfe_log_level_t level, const char *file, int line,
                            const char *fmt, ...) {
     // Parse PFE_DEBUG environment variable to determine log level
     if (log_level_set == false) {
@@ -74,7 +74,7 @@ static inline void pfe_log(pfe_log_level_t level, const char *file, int line,
                 pfe_debug_upper[i] = toupper((unsigned char)pfe_debug[i]);
             }
             pfe_debug_upper[len] = '\0';
-            
+
             // Parse log level
             if (strstr(pfe_debug_upper, "TRACE") != NULL) {
                 config_level = PFE_LOG_TRACE;
@@ -89,13 +89,13 @@ static inline void pfe_log(pfe_log_level_t level, const char *file, int line,
         }
         log_level_set = true;
     }
-    
+
     // Filter messages based on configured level
     // WARN (0): Show only WARN messages
     // INFO (1): Show WARN and INFO messages
     // TRACE (2): Show WARN, INFO, and TRACE messages
     if (level > config_level) return;
-    
+
     FILE* out = (level == PFE_LOG_WARN) ? stderr : stdout;
     const char* level_str;
     switch (level) {
@@ -104,14 +104,14 @@ static inline void pfe_log(pfe_log_level_t level, const char *file, int line,
         case PFE_LOG_TRACE: level_str = "TRACE"; break;
         default:            level_str = "???";   break;
     }
-    
+
     fprintf(out, "[PFE-LIB %s %s:%d] ", level_str, file, line);
-    
+
     va_list args;
     va_start(args, fmt);
     vfprintf(out, fmt, args);
     va_end(args);
-    
+
     fprintf(out, "\n");
 }
 
@@ -127,9 +127,9 @@ static inline void pfe_log(pfe_log_level_t level, const char *file, int line,
 /**
  * @brief Internal result type for functions
  */
-typedef enum { 
-    PFE_INTERNAL_SUCCESS = 0, 
-    PFE_INTERNAL_ERROR = 1 
+typedef enum {
+    PFE_INTERNAL_SUCCESS = 0,
+    PFE_INTERNAL_ERROR = 1
 } pfe_internal_result_t;
 
 /**
@@ -170,7 +170,7 @@ struct pfe_context {
     struct pfe_device_ctx devices[PFE_MAX_NUM_DEVICE];
     int num_devices;
     pfe_mode_t mode;
-    
+
     // Cached status array for pfe_get_status()
     pfe_device_status_t status_cache[PFE_MAX_NUM_DEVICE];
 };

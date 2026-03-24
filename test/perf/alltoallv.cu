@@ -109,7 +109,7 @@
  * Matrix file mode with explicit traffic pattern:
  *   ALLTOALLV_MATRIX_FILE=traffic.txt alltoallv_perf -b 32M -e 32M -f 2
  *   Tests arbitrary communication pattern defined in traffic.txt.
- * 
+ *
  */
 
 #include "cuda_runtime.h"

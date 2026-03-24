@@ -1,6 +1,6 @@
 # CLI for Port Failure Emulation
 
-This command-line interface (CLI) allows users to activate and manage port failure emulation on specified devices. 
+This command-line interface (CLI) allows users to activate and manage port failure emulation on specified devices.
 
 The CLI provides feedback on its operations, including errors and status updates.
 

@@ -1,7 +1,7 @@
 /**
  * @file pfe_core.c
  * @brief Core implementation of the Port Failure Emulation Library
- * 
+ *
  * Implements context lifecycle, device enumeration, and configuration functions.
  */
 
@@ -53,7 +53,7 @@ pfe_context_t* pfe_init(const pfe_config_t *config, pfe_result_t *result) {
     pfe_result_t local_result = PFE_ERROR;
 
     // Validate input
-    if (!config || !config->device_names || config->num_devices <= 0 || 
+    if (!config || !config->device_names || config->num_devices <= 0 ||
         config->num_devices > PFE_MAX_NUM_DEVICE) {
         WARN("Invalid configuration");
         goto error;
@@ -91,7 +91,7 @@ pfe_context_t* pfe_init(const pfe_config_t *config, pfe_result_t *result) {
         INFO("Initializing device: %s", dev_name);
 
         // Initialize device context
-        if (pfe_init_device(&ctx->devices[ctx->num_devices], ibv_dev, 
+        if (pfe_init_device(&ctx->devices[ctx->num_devices], ibv_dev,
                             ctx->mode) != PFE_INTERNAL_SUCCESS) {
             WARN("Failed to initialize device: %s", dev_name);
             goto error;
@@ -133,15 +133,15 @@ void pfe_destroy(pfe_context_t *ctx) {
         struct pfe_device_ctx *dev = &ctx->devices[i];
         if (dev->is_initialized) {
             TRACE("Destroying device: %s", dev->device_name);
-            
+
             // Deactivate if active
             if (dev->is_active) {
                 pfe_deactivate_device(dev, ctx->mode);
             }
-            
+
             // Destroy resources
             pfe_destroy_device_resources(dev, ctx->mode);
-            
+
             // Close device context
             if (dev->ibv_ctx) {
                 ibv_close_device(dev->ibv_ctx);
@@ -217,8 +217,8 @@ void pfe_free_device_list(char **device_names, int num_devices) {
 /*                          Status and Query                                  */
 /* ========================================================================== */
 
-pfe_result_t pfe_get_status(pfe_context_t *ctx, 
-                            pfe_device_status_t **status, 
+pfe_result_t pfe_get_status(pfe_context_t *ctx,
+                            pfe_device_status_t **status,
                             int *num_devices) {
     if (!ctx || !status || !num_devices) {
         return PFE_ERROR;

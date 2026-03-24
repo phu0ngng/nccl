@@ -257,7 +257,7 @@ int main(int argc, char* argv[]) {
   // Distribute unique ID
   MPICHECK(MPI_Bcast(&nccl_unique_id, sizeof(nccl_unique_id), MPI_BYTE, 0, MPI_COMM_WORLD));
   MPI_Barrier(MPI_COMM_WORLD);
-  
+
   // Set device context for this rank
   CUDACHECK(cudaSetDevice(local_device));
 
@@ -297,7 +297,7 @@ int main(int argc, char* argv[]) {
 
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
   PRINT_RANK0(my_rank, "Starting LSA barrier unicast test");
-  
+
   barrierWithTimeout(comm, stream, props, my_rank, total_ranks, local_device,
     testKernel{LsaBarrierWithTimeoutUnicastKernel, "LSA barrier unicast test"});
 
@@ -323,13 +323,13 @@ int main(int argc, char* argv[]) {
 
   barrierWithTimeout(comm, stream, props, my_rank, total_ranks, local_device,
     testKernel{LsaBarrierReturnForTimeoutKernel, "LSA barrier with timeout"});
-  
+
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
   PRINT_RANK0(my_rank, "Starting LSA barrier unicast with timeout");
 
   barrierWithTimeout(comm, stream, props, my_rank, total_ranks, local_device,
     testKernel{LsaBarrierReturnForTimeoutUnicastKernel, "LSA barrier unicast timeout"});
-  
+
   if (props.ginType != NCCL_GIN_TYPE_NONE) {
     MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
     PRINT_RANK0(my_rank, "Starting Barrier with timeout");

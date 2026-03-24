@@ -45,7 +45,7 @@ __global__ void putKernel(ncclDevComm comm, ncclWindow_t window, size_t offset) 
   ncclGin ginCta(comm, 0, NCCL_GIN_RESOURCE_SHARING_CTA);
   ncclGinSignal_t signalIdxGpu = 0;
   ncclGinSignal_t signalIdxCta = 1;
-  
+
   assert(railTeam.nRanks >= 2 && "Railed Gin put test requires at least 2 ranks per rail");
 
   uint64_t putValueGpu = getPutValue(comm) + 0;
@@ -57,7 +57,7 @@ __global__ void putKernel(ncclDevComm comm, ncclWindow_t window, size_t offset) 
     assert(*putSrcPtrCta == 0 && "putSrcPtrCta should be 0 before put");
     *putSrcPtrGpu = putValueGpu;
     *putSrcPtrCta = putValueCta;
-    
+
     ginGpu.put(railTeam, DST_RANK,
       window, offset + 0*sizeof(uint64_t),
       window, offset + 0*sizeof(uint64_t),
@@ -161,7 +161,7 @@ int main(int argc, char* argv[]) {
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_RAIL;
   reqs.ginSignalCount = 2;
-  
+
   ncclDevComm_t devComm;
   CUDACHECK(cudaSetDevice(localRank));
   NCCLCHECK(ncclDevCommCreate(comm, &reqs, &devComm));

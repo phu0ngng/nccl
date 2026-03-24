@@ -19,8 +19,8 @@ source "$CURRENT_DIR/ci-utils.sh"
 # Validate required environment variables
 # Arguments:
 #   $@ - Additional variable names to validate (optional)
-#        Example: 
-#        validate_environment VAR1 VAR2 - checks "base" vars and both additional 
+#        Example:
+#        validate_environment VAR1 VAR2 - checks "base" vars and both additional
 #        vars VAR1 and VAR2
 # Returns 0 if all required variables are set, exits with 1 otherwise
 validate_environment() {
@@ -28,14 +28,14 @@ validate_environment() {
     # Append any additional variable names passed as arguments
     required_vars+=("$@")
     local missing=0
-    
+
     for var in "${required_vars[@]}"; do
         if [ -z "${!var}" ]; then
             echo "ERROR: $var is not set"
             missing=1
         fi
     done
-    
+
     if [ $missing -eq 1 ]; then
         exit 1
     fi
@@ -53,7 +53,7 @@ get_port_failure_emu_node() {
 setup_nccl_common_params() {
     local enable_recovery=${1:-0}
     local params=""
-    
+
     params+="NCCL_DEBUG=${NCCL_DEBUG:-warn} "
     params+="NCCL_DEBUG_SUBSYS=NET "
     # To force the use of network transport for all communications
@@ -72,7 +72,7 @@ setup_nccl_common_params() {
     params+="NCCL_IB_RETRY_CNT=1 "
     # Enable port failover feature
     params+="NCCL_IB_RESILIENCY_PORT_FAILOVER=1 "
-    
+
     # Add port recovery parameters if enabled
     if [ "$enable_recovery" -eq 1 ]; then
         params+="NCCL_IB_RESILIENCY_PORT_RECOVERY=1 "
@@ -81,7 +81,7 @@ setup_nccl_common_params() {
         params+="NCCL_IB_RESILIENCY_PORT_RECOVERY_ALIVE_MSG_BATCH_INTERVAL=100 "
         params+="NCCL_IB_RESILIENCY_PORT_RECOVERY_ACK_TIMEOUT=$((1*SEC)) "
     fi
-    
+
     echo "$params"
 }
 
@@ -92,13 +92,13 @@ setup_nccl_common_params() {
 setup_nccl_ar_params() {
     local ar_threshold=$1
     local params=""
-    
+
     params+="NCCL_IB_AR_THRESHOLD=$ar_threshold "
     if [ "$ar_threshold" -eq 2147483647 ]; then
         params+="NCCL_PROTO=simple "
         params+="NCCL_IB_QPS_PER_CONNECTION=4 "
     fi
-    
+
     # Force NCCL to use the internal plugin that supports port failover
     # and port recovery. So, for example NCCL SHARP plugin which is loaded by
     # HPCX on some clusters is not used.
@@ -114,7 +114,7 @@ setup_nccl_ar_params() {
 setup_nccl_test_params() {
     local run_cycles=${1:-100}
     local params=""
-    
+
     params+="--minbytes 32MB " # -b
     params+="--maxbytes 32MB " # -e
     params+="--run_cycles $run_cycles " # -N
@@ -147,8 +147,8 @@ start_nccl_perf_test() {
 
     local cmd=""
     # $run_mode = SRUN_MPI
-    # $ppn 
-    # "$test_mpi_flags" 
+    # $ppn
+    # "$test_mpi_flags"
     # "$test_env_vars"
     cmd+=$(make_run_command $run_mode $ppn "$mpi_params" "$nccl_params")
     cmd+=" ${NCCL_HOME}/test/perf/${func}_perf ${test_params} "
@@ -241,15 +241,15 @@ start_port_failure_emulation() {
     local nic=$2
     local log_file=$3
     local -n ssh_pid_ref=$4
-    
+
     # Check if port failure emulation binary exists
     if [ ! -f "${PORT_FAILURE_EMU_BIN}" ]; then
         echo "ERROR: Port failure emulation binary not found"
         exit 1
     fi
-    
+
     echo "Launching port failure emulation binary via SSH on node ($node)"
-    
+
     # Use SSH to launch port failure emulation binary directly
     # This avoids SLURM resource contention when running concurrent srun commands
     local ssh_cmd="ssh $node ${PORT_FAILURE_EMU_BIN} -d ${nic}"
@@ -257,7 +257,7 @@ start_port_failure_emulation() {
     $ssh_cmd > "$log_file" 2>&1 &
     ssh_pid_ref=$!
     echo "Port failure emulation PID: $ssh_pid_ref"
-    
+
     # Let the port failure emulation binary start up
     sleep 2
 }
@@ -273,29 +273,29 @@ verify_port_failure_emulation() {
     local ssh_pid=$2
     local max_retries=${3:-3}
     local binary_name=$(basename "${PORT_FAILURE_EMU_BIN}")
-    
+
     echo "Verifying port failure emulation is running on node ($node)"
-    
+
     for ((i=1; i<=max_retries; i++)); do
         # First check if the local SSH PID is still alive - if not, no point checking remote
         if ! kill -0 ${ssh_pid} 2>/dev/null; then
             echo "ERROR: SSH process (PID: $ssh_pid) has died"
             exit 1
         fi
-        
+
         # Use pgrep to get PID - if we get a valid PID, process is running
         local emu_pid=$(ssh $node "pgrep ${binary_name}" 2>/dev/null) || emu_pid=""
         if [ -n "${emu_pid}" ]; then
             echo "Port failure emulation process found running on node (Remote PID: $emu_pid)"
             return 0
         fi
-        
+
         if [ $i -lt $max_retries ]; then
             echo "Attempt $i/$max_retries: Process not found yet, retrying in 1 second..."
             sleep 1
         fi
     done
-    
+
     echo "ERROR: Port failure emulation process not found on node after $max_retries attempts"
     exit 1
 }
@@ -309,11 +309,11 @@ stop_port_failure_emulation() {
     local node=$1
     local ssh_pid=$2
     local expect_running=${3:-1}  # 1 = expect process to be running, 0 = ok if not
-    
+
     local binary_name=$(basename "${PORT_FAILURE_EMU_BIN}")
-    
+
     echo "Sending TERM signal to port failure emulation process on node: $node"
-    
+
     # Use pgrep to check if process is running and get remote PID
     local emu_pid=$(ssh $node "pgrep ${binary_name}" 2>/dev/null) || emu_pid=""
     if [ -n "$emu_pid" ]; then
@@ -322,14 +322,14 @@ stop_port_failure_emulation() {
         echo "Sent TERM signal to ${binary_name}"
         # Give the process time to handle the TERM signal gracefully
         sleep 2
-        
+
         # Verify the process has terminated using kill -0 on the known PID
         if ssh $node "kill -0 ${emu_pid}" 2>/dev/null; then
             echo "WARNING: Port failure emulation process is still running after TERM signal (PID: $emu_pid)"
             echo "Attempting force kill with SIGKILL..."
             ssh $node "kill -KILL ${emu_pid}" 2>/dev/null
             sleep 1
-            
+
             # Verify SIGKILL worked
             if ssh $node "kill -0 ${emu_pid}" 2>/dev/null; then
                 echo "ERROR: Failed to kill port failure emulation process (PID: $emu_pid) even with SIGKILL"
@@ -345,7 +345,7 @@ stop_port_failure_emulation() {
             exit 1
         fi
     fi
-    
+
     echo "Waiting for port failure emulation local SSH process (PID=${ssh_pid}) to exit."
     wait $ssh_pid
     echo "Port failure emulation local SSH process (PID=${ssh_pid}) is not running anymore."
@@ -358,10 +358,10 @@ stop_port_failure_emulation() {
 print_test_logs() {
     local nccl_log=$1
     local emu_log=$2
-    
+
     echo ">>>>>>>>>>>>>>>>>>>>>> NCCL test log >>>>>>>>>>>>>>>>>>>>>>"
     cat "$nccl_log"
-    
+
     echo ">>>>>>>>>>>>>>>>>>>>>> Port failure emulation log >>>>>>>>>>>>>>>>>>>>>>"
     cat "$emu_log"
 
@@ -376,13 +376,13 @@ print_test_summary() {
     local failure_count=$1
     shift
     local failure_names=("$@")
-    
+
     echo "======== Summary ========"
-    
+
     for str in "${failure_names[@]}"; do
         echo "Failed Test: $str"
     done
-    
+
     echo "$failure_count tests failed"
 }
 
@@ -401,7 +401,7 @@ record_test_result() {
     local ar_threshold=$4
     local -n count_ref=$5
     local -n names_ref=$6
-    
+
     if [ $result -ne 0 ]; then
         ((count_ref++))
         names_ref+=("$func $test_type test (AR threshold: $ar_threshold)")

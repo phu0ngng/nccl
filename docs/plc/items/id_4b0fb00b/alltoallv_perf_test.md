@@ -64,7 +64,7 @@ Standard NCCL performance test requirements.
 
 The alltoallv test integrates into the existing perf test harness by implementing two function
 pointer structs:
-- **testEngine**: test-level functions (`getBuffSize`, `runTest`) 
+- **testEngine**: test-level functions (`getBuffSize`, `runTest`)
 - **testColl**: per-collective functions (`getCollByteCount`, `initData`, `getBw`, `runColl`)
 
 No modifications to the common test harness infrastructure were required.
@@ -230,7 +230,7 @@ The alltoallv-specific interface relies on environment variables to avoid adding
 - Environment variables:
   - `ALLTOALLV_MATRIX_FILE` (optional): path to a whitespace-separated matrix file. If not provided, the test uses the default generated pattern mode. The entire file is read and must be square (rows == cols); matrix dimension must be ≥ `nranks`. Line i column j represents bytes sent from rank i to rank j. All values are aligned to 16-byte boundaries.
   - `ALLTOALLV_MATRIX_SCALE` (optional): scale factor applied to all traffic matrix values. Default: 1.0 (no scaling). Applied before 16-byte alignment. Useful for testing different traffic volumes with the same pattern.
-  - `ALLTOALLV_SPREAD` (optional): controls the distance-weighted spread factor for generated patterns. Range: 0.0 to 1.0. Default: 1.0 (fully distance-weighted). 
+  - `ALLTOALLV_SPREAD` (optional): controls the distance-weighted spread factor for generated patterns. Range: 0.0 to 1.0. Default: 1.0 (fully distance-weighted).
     - 0.0 = uniform distribution (equal traffic to all peers)
     - 1.0 = fully distance-weighted (more traffic to distant ranks)
     - Intermediate values blend uniform and distance-weighted distributions

@@ -708,7 +708,7 @@ Value accepted
 ^^^^^^^^^^^^^^
 A path to a file which will be created or overwritten.
 
-Note: For multi-node NVLink systems, the dumped file will contain the full NVLink domain topology. 
+Note: For multi-node NVLink systems, the dumped file will contain the full NVLink domain topology.
 
 NCCL_SET_THREAD_NAME
 --------------------

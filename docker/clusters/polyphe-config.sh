@@ -125,7 +125,7 @@ function configure_test_env() {
 
     # MPI params
     export OMPI_MCA_coll_hcoll_enable=0
-    
+
     # NCCL params
     export NCCL_IB_TC=96
     export NCCL_NET_PLUGIN=none
@@ -133,7 +133,7 @@ function configure_test_env() {
     export NCCL_IB_HCA=mlx5_0,mlx5_1,mlx5_4,mlx5_5
     # WAR for failing GIN/DOCA on Polyphe (same as Theia)
     export NCCL_GIN_TYPE=2
-    
+
     # export NCCL_GDRCOPY_ENABLE=1
     # export NCCL_GDRCOPY_SYNC_ENABLE=1
 }

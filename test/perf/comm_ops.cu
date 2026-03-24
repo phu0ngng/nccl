@@ -305,7 +305,7 @@ void parse_args(int argc, char **argv) {
     print_help();
     ABORT_EXIT;
   }
-  
+
   // Define long options (alphabetical order)
   static struct option long_options[] = {
     {"abort",          no_argument,       0, 'a'},
@@ -785,7 +785,7 @@ void main_split(int argc, char **argv, timer_record_t* timing, MPI_Comm mpicomm)
 
     NCCLCHECK(ncclCommUserRank(ncclcomm, &ncclRank));
     NCCLCHECK(ncclCommCount(ncclcomm, &ncclCount));
-  
+
     /* it is not possible to split/shrink a single rank */
     if (ncclCount == 1) break;
 
@@ -819,7 +819,7 @@ void main_split(int argc, char **argv, timer_record_t* timing, MPI_Comm mpicomm)
     for (int i=0; i<args.work_iterations; i++) {
       do_work(timing, split_child);
     }
-    
+
     if (args.aborts) {
       start_timer(timing, nccl_abort);
       NCCLCHECK(ncclCommAbort(split_child));
@@ -928,7 +928,7 @@ void main_grow(int argc, char **argv, timer_record_t* timing, MPI_Comm mpicomm) 
     for (int i=0; i<args.work_iterations; i++) {
       do_work(timing, ncclComm_bigger);
     }
-    
+
     if (args.aborts) {
       start_timer(timing, nccl_abort);
       NCCLCHECK(ncclCommAbort(ncclComm_bigger));
@@ -1005,10 +1005,10 @@ timer_record_t* timing_allocate(MPI_Comm comm, int flush, int warmup) {
   timing->participated = (int*)malloc(sizeof(int) * timing->flush_interval);
   timing->comm = MPI_COMM_NULL;
   timing->count = 0;
-  
+
   if (comm != MPI_COMM_NULL) {
     timing_set_comm(timing, comm);
-  } else { 
+  } else {
     timing->rank = 0;
     timing->rank_count = 1;
   }
@@ -1024,7 +1024,7 @@ timer_record_t* timing_allocate(MPI_Comm comm, int flush, int warmup) {
     timing->sumsq = NULL;
     timing->participant_count = NULL;
   }
-  
+
   // Initialize type-sorted arrays to zero
   for (int i=0; i<timer_enum_count; i++) {
     timing->rounds_by_type[i] = 0;
@@ -1179,7 +1179,7 @@ int main(int argc, char **argv) {
     int color = 0;
     if (rank >= nrank_test) color = MPI_UNDEFINED;
     MPICHECK(MPI_Comm_split(MPI_COMM_WORLD, color, rank, &subcomm));
-    
+
 
     if (subcomm != MPI_COMM_NULL) {
       subtimer = timing_allocate(subcomm, args.timing_flush_interval, args.warmup_exclude);

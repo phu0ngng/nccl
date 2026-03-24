@@ -28,7 +28,7 @@ The following packages must be installed on the system:
 
 ### Compilation Instructions
 
-The library can be built using `make` or `cmake` with `ninja`. 
+The library can be built using `make` or `cmake` with `ninja`.
 
 To use `make`, simply run from NCCL root directory:
 
@@ -80,16 +80,16 @@ int main() {
 
     // Initialize
     pfe_context_t *ctx = pfe_init(&config, NULL);
-    
+
     // Activate port failure emulation
     pfe_activate(ctx, "mlx5_0");
-    
+
     // Run your tests here...
-    
+
     // Deactivate and cleanup
     pfe_deactivate(ctx, "mlx5_0");
     pfe_destroy(ctx);
-    
+
     return 0;
 }
 ```
@@ -113,30 +113,30 @@ int main() {
     };
 
     pfe_context_t *ctx = pfe_init(&config, NULL);
-    
+
     // Fail only mlx5_0
     pfe_activate(ctx, "mlx5_0");
-    
+
     // Check status
     if (pfe_is_active(ctx, "mlx5_0")) {
         printf("mlx5_0 is in failure mode\n");
     }
-    
+
     // Recover mlx5_0, fail mlx5_1 instead
     pfe_deactivate(ctx, "mlx5_0");
     pfe_activate(ctx, "mlx5_1");
-    
+
     // Get detailed status
     pfe_device_status_t *status;
     int num_devices;
     pfe_get_status(ctx, &status, &num_devices);
-    
+
     for (int i = 0; i < num_devices; i++) {
-        printf("Device %s: %s\n", 
+        printf("Device %s: %s\n",
                status[i].device_name,
                status[i].is_active ? "FAILED" : "OK");
     }
-    
+
     pfe_destroy(ctx);
     return 0;
 }
@@ -189,7 +189,7 @@ This example demonstrates:
 
 ### Usage in NCCL
 
-NCCL can use this library both as a library and via the CLI tool for resiliency tests. 
+NCCL can use this library both as a library and via the CLI tool for resiliency tests.
 
 ## API Reference
 
@@ -257,7 +257,7 @@ void test_nccl_port_failure_recovery() {
     // Setup NCCL
     ncclComm_t comms[4];
     setup_nccl_comms(comms, 4);
-    
+
     // Initialize port failure emulator
     const char *devices[] = {"mlx5_0"};
     pfe_config_t config = {
@@ -266,23 +266,23 @@ void test_nccl_port_failure_recovery() {
         .mode = PFE_MODE_RDMA
     };
     pfe_context_t *pfe_ctx = pfe_init(&config, NULL);
-    
+
     // Start NCCL operation
     start_nccl_allreduce(comms);
-    
+
     // Inject failure
     usleep(100000);
     pfe_activate(pfe_ctx, "mlx5_0");
-    
+
     // Wait for NCCL to detect and recover
     wait_for_recovery(comms);
-    
+
     // Restore port
     pfe_deactivate(pfe_ctx, "mlx5_0");
-    
+
     // Verify recovery
     verify_operations_work(comms);
-    
+
     // Cleanup
     pfe_destroy(pfe_ctx);
     cleanup_nccl(comms);
