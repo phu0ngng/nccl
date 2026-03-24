@@ -160,10 +160,15 @@ TEST_F(ncclCommWindowRegister_test, win_get_user_ptr) {
   ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 
   // Verify ncclWinGetUserPtr returns the original buffer pointer for each rank
+  // If wins[i] is NULL, symmetric memory is not supported — skip pointer check
   for (int i = 0; i < nVis; i++) {
-    void *userPtr = NULL;
+    void *userPtr = nullptr;
     ASSERT_EQ(ncclSuccess, ncclWinGetUserPtr(comms[i], wins[i], &userPtr));
-    ASSERT_EQ(userPtr, sendbuffs[i]) << "ncclWinGetUserPtr returned wrong pointer for rank " << i;
+    if (wins[i] != nullptr) {
+      ASSERT_EQ(userPtr, sendbuffs[i]) << "ncclWinGetUserPtr returned wrong pointer for rank " << i;
+    } else {
+      ASSERT_EQ(userPtr, nullptr) << "ncclWinGetUserPtr should return NULL userPtr when symmetric memory unsupported for rank " << i;
+    }
   }
 
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -186,13 +191,19 @@ TEST_F(ncclCommWindowRegister_test, win_get_user_ptr_multiple_windows) {
   ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 
   // Verify ncclWinGetUserPtr returns correct pointers for both windows
+  // If sendwins[i] is NULL, symmetric memory is not supported — skip pointer check
   for (int i = 0; i < nVis; i++) {
-    void *sendPtr = NULL, *recvPtr = NULL;
+    void *sendPtr = nullptr, *recvPtr = nullptr;
     ASSERT_EQ(ncclSuccess, ncclWinGetUserPtr(comms[i], sendwins[i], &sendPtr));
     ASSERT_EQ(ncclSuccess, ncclWinGetUserPtr(comms[i], recvwins[i], &recvPtr));
-    ASSERT_EQ(sendPtr, sendbuffs[i]) << "Send window user ptr mismatch for rank " << i;
-    ASSERT_EQ(recvPtr, recvbuffs[i]) << "Recv window user ptr mismatch for rank " << i;
-    ASSERT_NE(sendPtr, recvPtr) << "Send and recv windows should have different user ptrs";
+    if (sendwins[i] != nullptr) {
+      ASSERT_EQ(sendPtr, sendbuffs[i]) << "Send window user ptr mismatch for rank " << i;
+      ASSERT_EQ(recvPtr, recvbuffs[i]) << "Recv window user ptr mismatch for rank " << i;
+      ASSERT_NE(sendPtr, recvPtr) << "Send and recv windows should have different user ptrs";
+    } else {
+      ASSERT_EQ(sendPtr, nullptr) << "Send window user ptr should be NULL when symmetric memory unsupported for rank " << i;
+      ASSERT_EQ(recvPtr, nullptr) << "Recv window user ptr should be NULL when symmetric memory unsupported for rank " << i;
+    }
   }
 
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
