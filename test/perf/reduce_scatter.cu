@@ -143,7 +143,7 @@ bool ReduceScatterGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements
 template <typename T>
 __global__ void reduceScatterLsaKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
   ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
-  bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
+  bar.sync(ncclCoopCta(), cuda::memory_order_acquire);
 
   const int rank = devComm.rank, nRanks = devComm.nRanks;
   const size_t myChunkOffset = rank * count;
@@ -193,7 +193,7 @@ __global__ void reduceScatterLsaCtaKernel(ncclWindow_t sendwin, size_t sendoffse
   const ncclTeam team = ncclTeamLsa(devComm);
 
   ncclLsaBarrierSession<ncclCoopCta> bar { ctaCoop, devComm, team, devComm.lsaBarrier, blockIdx.x };
-  bar.sync(ctaCoop, cuda::memory_order_relaxed);
+  bar.sync(ctaCoop, cuda::memory_order_acquire);
 
   const int rank = devComm.rank;
 
@@ -240,7 +240,7 @@ __global__ void reduceScatterLsaCtaKernel(ncclWindow_t sendwin, size_t sendoffse
 template <typename T>
 __global__ void reduceScatterMultimemKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
   ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamTagLsa(), blockIdx.x, true };
-  bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
+  bar.sync(ncclCoopCta(), cuda::memory_order_acquire);
 
   const int rank = devComm.rank;
 
@@ -291,7 +291,7 @@ __global__ void reduceScatterMultimemCtaKernel(ncclWindow_t sendwin, size_t send
 
   // Create barrier session with multimem flag
   ncclLsaBarrierSession<ncclCoopCta> bar { ctaCoop, devComm, ncclTeamTagLsa(), blockIdx.x, true };
-  bar.sync(ctaCoop, cuda::memory_order_relaxed);
+  bar.sync(ctaCoop, cuda::memory_order_acquire);
 
   const int rank = devComm.rank;
 

@@ -102,7 +102,7 @@ Simple LSA Kernel
   template <typename T>
   __global__ void inPlaceAllReduceKernel(ncclDevComm devComm, ncclWindow_t win, size_t offset, size_t count) {
     ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamTagLsa(), blockIdx.x };
-    bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
+    bar.sync(ncclCoopCta(), cuda::memory_order_acquire);
 
     const int rank = devComm.lsaRank, nRanks = devComm.lsaSize;
     const int globalTid = threadIdx.x + blockDim.x * (rank + blockIdx.x * nRanks);
@@ -303,7 +303,7 @@ GIN Device Kernel
 
     ncclGinBarrierSession<ncclCoopCta> bar { ncclCoopCta(), gin, ncclTeamWorld(devComm),
                                              devComm.railGinBarrier, blockIdx.x };
-    bar.sync(ncclCoopCta(), cuda::memory_order_relaxed, ncclGinFenceLevel::Relaxed);
+    bar.sync(ncclCoopCta(), cuda::memory_order_acquire, ncclGinFenceLevel::Relaxed);
 
     const int rank = devComm.rank, nRanks = devComm.nRanks;
     const int tid = threadIdx.x + blockIdx.x * blockDim.x;
