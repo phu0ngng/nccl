@@ -225,8 +225,9 @@ protected:
 ////////////////////////////////////////////////////////////////////////////////
 
 // Helper function to allocate and register windows for all devices
-inline void allocateAndRegisterWindows(int nVis, ncclComm_t* comms, size_t size,
+inline void allocateAndRegisterWindows(int nVis, ncclComm_t* comms, const std::vector<size_t>& sizes,
                                        std::vector<void*>& ptrs, std::vector<ncclWindow_t>& wins) {
+  ASSERT_EQ(static_cast<size_t>(nVis), sizes.size());
   ptrs.resize(nVis);
   wins.resize(nVis);
 
@@ -235,18 +236,23 @@ inline void allocateAndRegisterWindows(int nVis, ncclComm_t* comms, size_t size,
 
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
-    ASSERT_EQ(ncclSuccess, ncclMemAlloc(&ptrs[i], size));
+    ASSERT_EQ(ncclSuccess, ncclMemAlloc(&ptrs[i], sizes[i]));
     ASSERT_NE(nullptr, ptrs[i]);
 
     // Initialize to zero
-    ASSERT_EQ(cudaSuccess, cudaMemset(ptrs[i], 0, size));
+    ASSERT_EQ(cudaSuccess, cudaMemset(ptrs[i], 0, sizes[i]));
 
     // Register window using public API
-    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], ptrs[i], size,
+    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], ptrs[i], sizes[i],
                                                    &wins[i], NCCL_WIN_COLL_SYMMETRIC));
   }
 
   ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+}
+
+inline void allocateAndRegisterWindows(int nVis, ncclComm_t* comms, size_t size,
+                                       std::vector<void*>& ptrs, std::vector<ncclWindow_t>& wins) {
+  allocateAndRegisterWindows(nVis, comms, std::vector<size_t>(nVis, size), ptrs, wins);
 }
 
 // Helper function to deregister and free windows for all devices
