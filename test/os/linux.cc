@@ -30,7 +30,7 @@ static uint64_t getHash(const char* string, size_t n) {
 uint64_t ncclTestGetHostHash(const char* hostname) {
   char hostHash[1024];
 
-  (void) strncpy(hostHash, hostname, sizeof(hostHash));
+  snprintf(hostHash, sizeof(hostHash), "%s", hostname);
   int offset = strlen(hostHash);
 
   FILE *file = fopen(HOSTID_FILE, "r");
