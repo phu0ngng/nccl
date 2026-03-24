@@ -7,49 +7,52 @@
 // Instructions:
 // - For a new field added to the bottom of an existing struct,
 //   add the field to the test and increment the expected size.
-// - For a backwards-incompatible change, change the version of the
-//   struct by defining a new struct object. Add a test for the new
-//   struct and keep the test for the original struct.
+//   If the expanded structure was embedded in another structure or passed by value to the kernel,
+//   then changes to the backwards compatibility layer in src/devcomm/ may be needed.
+// - For a backwards-incompatible change, the test for the original
+//   struct will probably need to move to the backwards compatibility layer in src/devcomm/.
 // - Other edits should be made with extreme caution to ensure
 //   backwards-compatibility.
 
 void ncclDevComm_backwards_compat_test() {
   // To ensure backwards compatibility, edit this test only according to the instructions above.
-  static_assert(offsetof(ncclDevComm_t, rank) == 0);
-  static_assert(offsetof(ncclDevComm_t, nRanks) == 4);
-  static_assert(offsetof(ncclDevComm_t, nRanks_rcp32) == 8);
-  static_assert(offsetof(ncclDevComm_t, lsaRank) == 12);
-  static_assert(offsetof(ncclDevComm_t, lsaSize) == 16);
-  static_assert(offsetof(ncclDevComm_t, lsaSize_rcp32) == 20);
-  static_assert(offsetof(ncclDevComm_t, windowTable) == 24);
-  static_assert(offsetof(ncclDevComm_t, resourceWindow) == 32);
-  static_assert(offsetof(ncclDevComm_t, resourceWindow_inlined) == 40);
-  static_assert(offsetof(ncclDevComm_t, lsaMultimem) == 112);
-  static_assert(offsetof(ncclDevComm_t, lsaBarrier) == 120);
-  static_assert(offsetof(ncclDevComm_t, railGinBarrier) == 128);
-  static_assert(offsetof(ncclDevComm_t, ginConnectionCount) == 136);
-  static_assert(offsetof(ncclDevComm_t, ginNetDeviceTypes) == 137);
-  static_assert(offsetof(ncclDevComm_t, ginHandles) == 144);
-  static_assert(offsetof(ncclDevComm_t, ginSignalBase) == 176);
-  static_assert(offsetof(ncclDevComm_t, ginSignalCount) == 180);
-  static_assert(offsetof(ncclDevComm_t, ginCounterBase) == 184);
+  static_assert(offsetof(ncclDevComm_t, rank) == 8);
+  static_assert(offsetof(ncclDevComm_t, nRanks) == 12);
+  static_assert(offsetof(ncclDevComm_t, nRanks_rcp32) == 16);
+  static_assert(offsetof(ncclDevComm_t, lsaRank) == 20);
+  static_assert(offsetof(ncclDevComm_t, lsaSize) == 24);
+  static_assert(offsetof(ncclDevComm_t, lsaSize_rcp32) == 28);
+  static_assert(offsetof(ncclDevComm_t, windowTable) == 32);
+  static_assert(offsetof(ncclDevComm_t, resourceWindow) == 40);
+  static_assert(offsetof(ncclDevComm_t, resourceWindow_inlined) == 48);
+  static_assert(offsetof(ncclDevComm_t, lsaMultimem) == 120);
+  static_assert(offsetof(ncclDevComm_t, lsaBarrier) == 128);
+  static_assert(offsetof(ncclDevComm_t, railGinBarrier) == 136);
+  static_assert(offsetof(ncclDevComm_t, ginConnectionCount) == 144);
+  static_assert(offsetof(ncclDevComm_t, ginNetDeviceTypes) == 145);
+  static_assert(offsetof(ncclDevComm_t, ginHandles) == 152);
+  static_assert(offsetof(ncclDevComm_t, ginSignalCount) == 184);
   static_assert(offsetof(ncclDevComm_t, ginCounterCount) == 188);
   static_assert(offsetof(ncclDevComm_t, ginSignalShadows) == 192);
   static_assert(offsetof(ncclDevComm_t, ginContextCount) == 200);
-  static_assert(offsetof(ncclDevComm_t, ginContextBase) == 204);
-  static_assert(offsetof(ncclDevComm_t, ginIsRailed) == 208);
-  static_assert(offsetof(ncclDevComm_t, abortFlag) == 216);
-  static_assert(offsetof(ncclDevComm_t, hybridLsaBarrier) == 224);
-  static_assert(offsetof(ncclDevComm_t, hybridRailGinBarrier) == 232);
-  static_assert(offsetof(ncclDevComm_t, worldGinBarrier) == 240);
+  static_assert(offsetof(ncclDevComm_t, ginIsRailed) == 204);
+  static_assert(offsetof(ncclDevComm_t, abortFlag) == 208);
+  static_assert(offsetof(ncclDevComm_t, hybridLsaBarrier) == 216);
+  static_assert(offsetof(ncclDevComm_t, hybridRailGinBarrier) == 224);
+  static_assert(offsetof(ncclDevComm_t, worldGinBarrier) == 232);
 
   // This check prompts users to update the test. Edit according to the instructions above.
-  static_assert(sizeof(ncclDevComm_t) == 248);
-}
+  static_assert(sizeof(ncclDevComm_t) == 240);
 
+  static_assert(offsetof(struct ncclDevCommWindowTable, entries) == 0);
+  static_assert(offsetof(struct ncclDevCommWindowTable, entries[0].base) == 0);
+  static_assert(offsetof(struct ncclDevCommWindowTable, entries[0].size) == 8);
+  static_assert(offsetof(struct ncclDevCommWindowTable, entries[0].window) == 16);
+  static_assert(offsetof(struct ncclDevCommWindowTable, next) == 768);
 
-void ncclWindow_vidmem_backwards_compat_test() {
-  // To ensure backwards compatibility, edit this test only according to the instructions above.
+  // This check prompts users to update the test. Edit according to the instructions above.
+  static_assert(sizeof(struct ncclDevCommWindowTable) == 776);
+
   static_assert(offsetof(ncclWindow_vidmem, winHost) == 0);
   static_assert(offsetof(ncclWindow_vidmem, lsaFlatBase) == 8);
   static_assert(offsetof(ncclWindow_vidmem, lsaRank) == 16);
@@ -61,6 +64,22 @@ void ncclWindow_vidmem_backwards_compat_test() {
 
   // This check prompts users to update the test. Edit according to the instructions above.
   static_assert(sizeof(ncclWindow_vidmem) == 72);
+
+  static_assert(offsetof(ncclMultimemHandle_t, mcBasePtr) == 0);
+
+  // This check prompts users to update the test. Edit according to the instructions above.
+  static_assert(sizeof(ncclMultimemHandle_t) == 8);
+
+  static_assert(offsetof(ncclLsaBarrierHandle_t, bufHandle) == 0);
+  static_assert(offsetof(ncclLsaBarrierHandle_t, nBarriers) == 4);
+
+  // This check prompts users to update the test. Edit according to the instructions above.
+  static_assert(sizeof(ncclLsaBarrierHandle_t) == 8);
+
+  static_assert(offsetof(ncclGinBarrierHandle_t, signal0) == 0);
+
+  // This check prompts users to update the test. Edit according to the instructions above.
+  static_assert(sizeof(ncclGinBarrierHandle_t) == 8);
 }
 
 void ncclDevCommRequirements_backwards_compat_test() {
@@ -86,6 +105,29 @@ void ncclDevCommRequirements_backwards_compat_test() {
 
   // This check prompts users to update the test. Edit according to the instructions above.
   static_assert(sizeof(ncclDevCommRequirements_t) == 88);
+
+  static_assert(offsetof(ncclDevResourceRequirements_t, next) == 0);
+  static_assert(offsetof(ncclDevResourceRequirements_t, bufferSize) == 8);
+  static_assert(offsetof(ncclDevResourceRequirements_t, bufferAlign) == 16);
+  static_assert(offsetof(ncclDevResourceRequirements_t, outBufferHandle) == 24);
+  static_assert(offsetof(ncclDevResourceRequirements_t, ginSignalCount) == 32);
+  static_assert(offsetof(ncclDevResourceRequirements_t, ginCounterCount) == 36);
+  static_assert(offsetof(ncclDevResourceRequirements_t, outGinSignalStart) == 40);
+  static_assert(offsetof(ncclDevResourceRequirements_t, outGinCounterStart) == 48);
+
+  // This check prompts users to update the test. Edit according to the instructions above.
+  static_assert(sizeof(ncclDevResourceRequirements_t) == 56);
+
+  static_assert(offsetof(ncclTeamRequirements_t, next) == 0);
+  static_assert(offsetof(ncclTeamRequirements_t, team) == 8);
+  static_assert(offsetof(ncclTeamRequirements_t, multimem) == 20);
+  static_assert(offsetof(ncclTeamRequirements_t, outMultimemHandle) == 24);
+
+  // This check prompts users to update the test. Edit according to the instructions above.
+  static_assert(sizeof(ncclTeamRequirements_t) == 32);
+
+  // This check prompts users to update the test. Edit according to the instructions above.
+  static_assert(sizeof(ncclGinConnectionType_t) == 4);
 }
 
 void ncclCommProperties_backwards_compat_test() {
@@ -106,4 +148,7 @@ void ncclCommProperties_backwards_compat_test() {
 
   // This check prompts users to update the test. Edit according to the instructions above.
   static_assert(sizeof(ncclCommProperties_t) == 56);
+
+  // This check prompts users to update the test. Edit according to the instructions above.
+  static_assert(sizeof(ncclGinConnectionType_t) == 4);
 }
