@@ -2034,7 +2034,7 @@ apitest-pre-tyche:
   extends:
     - .pre-tyche
   rules:
-    - <<: *post_submit_rule
+    - <<: *pre_submit_rule
     - if: $RUN_ON_PRE_TYCHE == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
