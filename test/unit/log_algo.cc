@@ -150,7 +150,7 @@ int runRSAlgo(int nranks, int rank, size_t size, int nChannels, int nsteps, int 
   if (verbose) printf("| Reduce Scatter nranks %6d size %8ld nChannels %2d nsteps %1d stepSize %7d parFactor %2d |\n", nranks, size, nChannels, nsteps, stepSize, parFactor);
   if (verbose) printf("+----+-------+-------+-----------+------------+----------+----------+------+--------+--------+---+\n");
   if (verbose) printf("|Rank|RecvDim|SendDim|InputOffset|OutputOffset|RecvOffset|SendOffset|Nelems|PostRecv|PostSend|USL|\n");
-  struct ncclPatStep ps;
+  struct ncclPatStep ps = {0};
   int step = 0;
   do {
     if (step++ % parFactor == 0) {
@@ -232,7 +232,7 @@ int runAGAlgo(int nranks, int rank, size_t size, int nChannels, int nsteps, int 
   if (verbose) printf("| All Gather     nranks %6d size %8ld nChannels %2d nsteps %1d stepSize %7d parFactor %2d |\n", nranks, size, nChannels, nsteps, stepSize, parFactor);
   if (verbose) printf("+----+-------+-------+-----------+------------+----------+----------+------+--------+--------+---+\n");
   if (verbose) printf("|Rank|RecvDim|SendDim|InputOffset|OutputOffset|RecvOffset|SendOffset|Nelems|PostRecv|PostSend|USL|\n");
-  struct ncclPatStep ps;
+  struct ncclPatStep ps = {0};
   int step = 0;
   do {
     if (step++ % parFactor == 0) {
