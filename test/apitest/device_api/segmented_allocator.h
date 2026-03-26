@@ -220,7 +220,7 @@ static inline void segmentedMemcpyToHost(
     if (descriptors[seg].location_type == SEGMENT_LOCATION_DEVICE) {
       CUDACHECK(cudaMemcpy(dst, src, n, cudaMemcpyDeviceToHost));
     } else {
-      CUDACHECK(cudaMemcpy(dst, src, n, cudaMemcpyHostToHost));
+      memcpy(dst, src, n);
     }
     src += segSize;
     dst += n;
@@ -247,7 +247,7 @@ static inline void segmentedMemcpyToDevice(
     if (descriptors[seg].location_type == SEGMENT_LOCATION_DEVICE) {
       CUDACHECK(cudaMemcpy(dst, src, n, cudaMemcpyHostToDevice));
     } else {
-      CUDACHECK(cudaMemcpy(dst, src, n, cudaMemcpyHostToHost));
+      memcpy(dst, src, n);
     }
     dst += segSize;
     src += n;
