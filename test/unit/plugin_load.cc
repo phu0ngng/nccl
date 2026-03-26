@@ -17,7 +17,7 @@
 #define NCCL_NET_PLUGIN_SYM "ncclNetPlugin_v11"
 #define NCCL_TUNER_PLUGIN_SYM "ncclTunerPlugin_v5"
 #define NCCL_PROFILER_PLUGIN_SYM "ncclProfiler_v6"
-#define NCCL_ENV_PLUGIN_SYM "ncclEnvPlugin_v1"
+#define NCCL_ENV_PLUGIN_SYM "ncclEnvPlugin_v2"
 
 enum test {
   ncclPluginNetRelPathTest,
