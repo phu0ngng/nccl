@@ -3496,9 +3496,9 @@ perftest-polyphe-nvl576-cross-clique-512:
       when: always
     - when: never
   needs: ["setup-polyphe"]
-  timeout: 12h
+  timeout: 6h
   variables:
-    SLURM_TIME: 600
+    SLURM_TIME: 300
     NNODES: 128
     NGPUS: 4
     MAX: "1G"
@@ -3535,9 +3535,9 @@ perftest-polyphe-nvl576-cross-clique-576:
     - setup-polyphe
     - job: perftest-polyphe-nvl576-cross-clique-512
       optional: true
-  timeout: 14h
+  timeout: 6h
   variables:
-    SLURM_TIME: 720
+    SLURM_TIME: 300
     NNODES: 144
     NGPUS: 4
     MAX: "1G"
