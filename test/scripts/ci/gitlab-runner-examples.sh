@@ -44,7 +44,7 @@ function run_example_test() {
                 return 0
             fi
             ;;
-        *device_api)
+        *device_api|*kernel_fusion)
             # Advanced examples need at least 2 GPUs
             if [[ $NGPUS -lt 2 ]]; then
                 echo "SKIP: Example requires at least 2 GPUs"
@@ -93,6 +93,10 @@ if [[ "${EXAMPLES_TESTS_BASIC_ONLY}" != "1" ]]; then
             "06_device_api/01_allreduce_lsa"
             "06_device_api/02_alltoall_gin"
             "06_device_api/03_alltoall_hybrid"
+            "07_kernel_fusion/01_rmsnorm_lsa"
+            "07_kernel_fusion/02_rmsnorm_multimem"
+            "07_kernel_fusion/03_rmsnorm_gin"
+            "07_kernel_fusion/04_rmsnorm_hybrid"
         )
     fi
 fi
