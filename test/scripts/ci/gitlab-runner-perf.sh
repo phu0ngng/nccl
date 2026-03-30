@@ -361,8 +361,10 @@ if [ "$SKIP_COMM_MGT_TESTS" != "1" ]; then
   if [ "${WORKAROUND_NVBUG_5793707}" == "1" ]; then
       export NCCL_NET_MERGE_LEVEL=LOC
   fi
-  run_command "comm_ops_perf_grow"       $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/comm_ops_perf" "grow"
-  run_command "comm_ops_perf_grow_abort" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/comm_ops_perf" "grow --abort"
+  if [ "${SKIP_COMM_OPS_GROW_NVBUG_6029839}" != "1" ]; then
+      run_command "comm_ops_perf_grow"       $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/comm_ops_perf" "grow"
+      run_command "comm_ops_perf_grow_abort" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/comm_ops_perf" "grow --abort"
+  fi
   if [ "${WORKAROUND_NVBUG_5793707}" == "1" ]; then
     unset NCCL_NET_MERGE_LEVEL
   fi

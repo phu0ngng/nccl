@@ -2977,6 +2977,7 @@ perftest_multi-AWS-H100-EFA:
       export SKIP_FT_FINALIZE=$SKIP_FT_FINALIZE
       export DEVICE_API=$DEVICE_API
       export SKIP_MULTI_RANK_GPU=$SKIP_MULTI_RANK_GPU
+      export SKIP_COMM_OPS_GROW_NVBUG_6029839=1 # see https://nvbugspro.nvidia.com/bug/6029839
 
       # Launch perftest-multi suite
       salloc -N ${NNODES} --exclusive -J "nccl-ci::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} $TEST_CMD
