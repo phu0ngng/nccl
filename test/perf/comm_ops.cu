@@ -100,41 +100,43 @@ enum timer_enums {
   timer_enum_count,
 };
 
+// timer_strings array - order must match timer_enums exactly
 const char* const timer_strings[timer_enum_count] = {
-  [mpi_init] = "(MPI) Initialization",
-  [mpi_barrier] = "(MPI) Barrier",
-  [mpi_allgatherv] = "(MPI) Allgatherv for ncclUniqueId",
-  [work_prepare] = "(CUDA) Allocate mem and streams",
-  [nccl_init] = "NCCL ncclCommInitRankScalable",
-  [nccl_split] = "NCCL ncclCommSplit",
-  [nccl_grow] = "NCCL ncclCommGrow",
-  [nccl_allreduce] = "NCCL ncclAllReduce",
-  [nccl_finalize] = "NCCL ncclCommFinalize",
-  [nccl_destroy] = "NCCL ncclCommDestroy",
-  [nccl_abort] = "NCCL ncclCommAbort",
-  [nccl_shrink] = "NCCL ncclCommShrink",
-  [cuda_init] = "(CUDA) Initialization",
-  [cuda_stream_sync] = "(CUDA) Stream Synchronize",
+  "(MPI) Initialization",           // mpi_init
+  "(MPI) Barrier",                  // mpi_barrier
+  "(MPI) Allgatherv for ncclUniqueId", // mpi_allgatherv
+  "(CUDA) Allocate mem and streams",   // work_prepare
+  "NCCL ncclCommInitRankScalable",  // nccl_init
+  "NCCL ncclCommSplit",             // nccl_split
+  "NCCL ncclCommGrow",              // nccl_grow
+  "NCCL ncclAllReduce",             // nccl_allreduce
+  "NCCL ncclCommFinalize",          // nccl_finalize
+  "NCCL ncclCommDestroy",           // nccl_destroy
+  "NCCL ncclCommAbort",             // nccl_abort
+  "NCCL ncclCommShrink",            // nccl_shrink
+  "(CUDA) Initialization",          // cuda_init
+  "(CUDA) Stream Synchronize",      // cuda_stream_sync
 };
 
 const int nccl_flag = 0x1 << 1;
 const int cuda_flag = 0x1 << 2;
 const int mpi_flag  = 0x1 << 3;
+// timer_flags array - order must match timer_enums exactly
 const int timer_flags[timer_enum_count] = {
-  [mpi_init] = mpi_flag,
-  [mpi_barrier] = mpi_flag,
-  [mpi_allgatherv] = mpi_flag,
-  [work_prepare] = cuda_flag,
-  [nccl_init] = nccl_flag,
-  [nccl_split] = nccl_flag,
-  [nccl_grow] = nccl_flag,
-  [nccl_allreduce] = nccl_flag,
-  [nccl_finalize] = nccl_flag,
-  [nccl_destroy] = nccl_flag,
-  [nccl_abort] = nccl_flag,
-  [nccl_shrink] = nccl_flag,
-  [cuda_init] = cuda_flag,
-  [cuda_stream_sync] = cuda_flag,
+  mpi_flag,   // mpi_init
+  mpi_flag,   // mpi_barrier
+  mpi_flag,   // mpi_allgatherv
+  cuda_flag,  // work_prepare
+  nccl_flag,  // nccl_init
+  nccl_flag,  // nccl_split
+  nccl_flag,  // nccl_grow
+  nccl_flag,  // nccl_allreduce
+  nccl_flag,  // nccl_finalize
+  nccl_flag,  // nccl_destroy
+  nccl_flag,  // nccl_abort
+  nccl_flag,  // nccl_shrink
+  cuda_flag,  // cuda_init
+  cuda_flag,  // cuda_stream_sync
 };
 bool timer_type_nccl(int timer_enum) {
   return (timer_flags[timer_enum] & nccl_flag) == nccl_flag;
