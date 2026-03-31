@@ -1837,6 +1837,7 @@ apitest-eos:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
@@ -1870,6 +1871,7 @@ apitest-cw-dfw:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
@@ -1908,6 +1910,7 @@ apitest-AWS-H100-EFA:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 0 # NvBug 5210770
     API_TESTS_NETWORK: 1
+    API_TESTS_RMA: 0
     API_TESTS_DEVICE_API: 1
   before_script:
     - |
@@ -1939,6 +1942,7 @@ apitest-AWS-H100-EFA:
       export API_TESTS_DEFAULT=$API_TESTS_DEFAULT
       export API_TESTS_NO_P2P=$API_TESTS_NO_P2P
       export API_TESTS_NETWORK=$API_TESTS_NETWORK
+      export API_TESTS_RMA=$API_TESTS_RMA
       export API_TESTS_DEVICE_API=$API_TESTS_DEVICE_API
 
       # Launch unit test suite
@@ -1981,6 +1985,7 @@ apitest-draco_oci:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gpus-per-node $NGPUS --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
@@ -2014,6 +2019,7 @@ apitest-pre-nyx:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
@@ -2046,6 +2052,7 @@ apitest-pre-tyche:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
@@ -2079,6 +2086,7 @@ apitest-ipp6-a40:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::apitest-a40::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
@@ -2119,6 +2127,7 @@ apitest-ipp6-a100:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::apitest-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
@@ -2151,6 +2160,7 @@ apitest-dgxspark:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}:api::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -2183,6 +2193,7 @@ apitest-theia:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
@@ -2215,6 +2226,8 @@ apitest-bia:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    # Re-enable after resovle https://nvbugspro.nvidia.com/bug/5680492
+    API_TESTS_RMA: 0
     API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
@@ -2246,6 +2259,7 @@ apitest-polyphe:
     API_TESTS_DEFAULT: 0
     API_TESTS_NO_P2P: 0
     API_TESTS_NETWORK: 0
+    API_TESTS_RMA: 0
     API_TESTS_DEVICE_API: 0  # Disabled: ncclDevCommCreate_test.valid_gin_connection_type segfaults on Polyphe
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"

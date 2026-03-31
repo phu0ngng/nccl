@@ -56,8 +56,8 @@ initOnceTest="ncclCommInitRankConfig_test.init_net_dev_once"
 splitOnceTest="ncclCommSplit_test.init_net_dev_once"
 gtestFilter="-${multinetTests}:${sharedPluginTest}:${initOnceTest}:${splitOnceTest}"
 
-if [ "${DEVICE_API}" == "0" ] ; then
-  gtestFilter="${gtestFilter}:ncclCommQueryProperties_test.test_gin_support:ncclCommQueryProperties_test.test_railed_gin_support:ncclCommQueryProperties_test.test_multimem_support:ncclCommWindowRegister_test.*:ncclOneSidedRma_test.*"
+if [[ ${API_TESTS_RMA} -ne 1 ]] ; then
+  gtestFilter="${gtestFilter}:ncclOneSidedRma_test.*"
 fi
 
 # run all tests except the ones with a special config
