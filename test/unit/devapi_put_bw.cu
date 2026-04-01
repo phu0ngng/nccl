@@ -74,7 +74,30 @@ static runDevice_t getRunDeviceFunc(cli_args_t args) {
   return func;
 }
 
+// warpSize = 32 is constant for all NVIDIA GPU architectures.
+static const int kWarpSize = 32;
+
+static void validate_args(int argc, char** argv, const cli_args_t& args) {
+  if (args.gin_aggregate_requests && args.num_threads % kWarpSize != 0) {
+    int nearest = ((args.num_threads + kWarpSize / 2) / kWarpSize) * kWarpSize;
+    if (nearest < kWarpSize) nearest = kWarpSize;
+    if (nearest > 1024) nearest = 1024;
+    fprintf(stderr,
+      "Error: --gin_aggregate_requests requires the thread count per CTA (-t) to be a multiple of warpSize.\n"
+      "  warpSize = %d (constant for all NVIDIA GPU architectures)\n"
+      "  Provided: -t %d\n"
+      "  Valid values: any multiple of %d in [%d, 1024], e.g. 32, 64, 96, 128, 256, 512, 1024\n"
+      "  Suggestion: use -t %d\n",
+      kWarpSize, args.num_threads, kWarpSize, kWarpSize, nearest);
+    exit(EXIT_FAILURE);
+  }
+}
+
 int main(int argc, char** argv) {
+  cli_args_t args;
+  parse_cli_args(argc, argv, &args);
+  validate_args(argc, argv, args);
+
   int rank, nRanks;
   MPICHECK(MPI_Init(&argc, &argv));
   MPICHECK(MPI_Comm_rank(MPI_COMM_WORLD, &rank));
@@ -84,9 +107,6 @@ int main(int argc, char** argv) {
     fprintf(stderr, "This test requires exactly 2 ranks\n");
     MPI_Abort(MPI_COMM_WORLD, 1);
   }
-
-  cli_args_t args;
-  parse_cli_args(argc, argv, &args);
 
   uint64_t* hosts = new uint64_t[nRanks];
   char hostname[1024];
@@ -105,14 +125,6 @@ int main(int argc, char** argv) {
   MPICHECK(MPI_Bcast((void*)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD));
 
   CUDACHECK(cudaSetDevice(dev));
-
-  int warpSize = 0;
-  CUDACHECK(cudaDeviceGetAttribute(&warpSize, cudaDevAttrWarpSize, dev));
-
-  if (args.gin_aggregate_requests && args.num_threads % warpSize != 0) {
-    fprintf(stderr, "num_threads must be a multiple of warpSize when using aggregate requests\n");
-    MPI_Abort(MPI_COMM_WORLD, 1);
-  }
 
   cudaStream_t stream;
   CUDACHECK(cudaStreamCreate(&stream));
