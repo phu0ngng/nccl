@@ -175,6 +175,8 @@ workflow:
   - "!bindings/nccl4py/build_assets/**/*"
   - "!bindings/nccl4py/ci/**/*"
   - "!bindings/nccl4py/tests/**/*"
+  - "!contrib/nccl_ep/ci/**/*"
+  - "!contrib/nccl_ep/scripts/**/*"
   - "!pkg/conda/**/*"
   - "!pkg/doc/**/*"
 
