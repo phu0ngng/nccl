@@ -57,12 +57,13 @@ target_compile_options(portfailureemu PRIVATE -Wall -Wextra -ggdb)
 # ============================================================================
 
 # Create CLI executable
-add_executable(portFailureEmu cli/main.c)
-set_target_properties(portFailureEmu PROPERTIES
+add_executable(portfailureemu-cli cli/main.c)
+set_target_properties(portfailureemu-cli PROPERTIES
+    OUTPUT_NAME "portFailureEmu"
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
-target_compile_options(portFailureEmu PRIVATE -Wall -Wextra -ggdb)
-target_link_libraries(portFailureEmu portfailureemu)
+target_compile_options(portfailureemu-cli PRIVATE -Wall -Wextra -ggdb)
+target_link_libraries(portfailureemu-cli portfailureemu)
 
 # ============================================================================
 #                         Examples Build
@@ -87,7 +88,7 @@ install(TARGETS portfailureemu
 )
 
 # Install CLI tool
-install(TARGETS portFailureEmu
+install(TARGETS portfailureemu-cli
     RUNTIME DESTINATION bin
 )
 
