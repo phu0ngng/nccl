@@ -102,9 +102,11 @@ void ncclDevCommRequirements_backwards_compat_test() {
   static_assert(offsetof(ncclDevCommRequirements_t, ginConnectionType) == 72);
   static_assert(offsetof(ncclDevCommRequirements_t, ginExclusiveContexts) == 76);
   static_assert(offsetof(ncclDevCommRequirements_t, ginQueueDepth) == 80);
+  static_assert(offsetof(ncclDevCommRequirements_t, ginTrafficClass) == 84);
+  static_assert(offsetof(ncclDevCommRequirements_t, worldGinBarrierCount) == 88);
 
   // This check prompts users to update the test. Edit according to the instructions above.
-  static_assert(sizeof(ncclDevCommRequirements_t) == 88);
+  static_assert(sizeof(ncclDevCommRequirements_t) == 96);
 
   static_assert(offsetof(ncclDevResourceRequirements_t, next) == 0);
   static_assert(offsetof(ncclDevResourceRequirements_t, bufferSize) == 8);
