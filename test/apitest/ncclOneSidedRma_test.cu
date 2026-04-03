@@ -26,7 +26,7 @@ class ncclOneSidedRma_test : public ::testing::Test {
     if (driverVersion < 12050) return;
 
     ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
-    if (nVis < 2) return;
+    if (nVis < 2 || comms == NULL) return;
 
     comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
     sendbuffs = (void**)calloc(nVis, sizeof(void*));
@@ -46,6 +46,21 @@ class ncclOneSidedRma_test : public ::testing::Test {
       ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], nVis, id, i, &config));
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    // Check if Host RMA is supported on this platform
+    ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
+    ASSERT_EQ(ncclSuccess, ncclCommQueryProperties(comms[0], &props));
+    if (!props.hostRmaSupport) {
+      // Cleanup comms and skip test
+      for (int i = 0; i < nVis; i++) {
+        ncclCommDestroy(comms[i]);
+      }
+      free(comms); comms = NULL;
+      free(sendbuffs); free(recvbuffs);
+      free(sendwins); free(recvwins);
+      free(streams);
+      return; // Skip - Host RMA not supported
+    }
 
     // Allocate symmetric buffers and create streams
     for (int i = 0; i < nVis; i++) {
@@ -91,7 +106,7 @@ class ncclOneSidedRma_test : public ::testing::Test {
 
 // Test ncclPutSignal + ncclWaitSignal: ring put with data verification
 TEST_F(ncclOneSidedRma_test, put_signal_basic) {
-  if (nVis < 2) return;
+  if (nVis < 2 || comms == NULL) return;
 
   const size_t count = 1024; // 1024 ints = 4KB
 
@@ -144,7 +159,7 @@ TEST_F(ncclOneSidedRma_test, put_signal_basic) {
 
 // Test ncclSignal + ncclWaitSignal without data transfer
 TEST_F(ncclOneSidedRma_test, signal_only) {
-  if (nVis < 2) return;
+  if (nVis < 2 || comms == NULL) return;
 
   // Each rank signals its downstream peer (no data)
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -171,7 +186,7 @@ TEST_F(ncclOneSidedRma_test, signal_only) {
 
 // Test ncclWaitSignal with multiple descriptors (all-to-all signaling pattern)
 TEST_F(ncclOneSidedRma_test, wait_signal_multi_peer) {
-  if (nVis < 2) return;
+  if (nVis < 2 || comms == NULL) return;
 
   // All-to-all signal: each rank signals every other rank
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -211,21 +226,21 @@ TEST_F(ncclOneSidedRma_test, wait_signal_multi_peer) {
 // ============================================================================
 
 TEST_F(ncclOneSidedRma_test, put_signal_null_localbuff) {
-  if (nVis < 2) return;
+  if (nVis < 2 || comms == NULL) return;
 
   ASSERT_EQ(ncclInvalidArgument, ncclPutSignal(NULL, 1024, ncclInt, 1, recvwins[0], 0,
                                                 0, ctx, 0, comms[0], streams[0]));
 }
 
 TEST_F(ncclOneSidedRma_test, put_signal_null_peer_win) {
-  if (nVis < 2) return;
+  if (nVis < 2 || comms == NULL) return;
 
   ASSERT_EQ(ncclInvalidArgument, ncclPutSignal(sendbuffs[0], 1024, ncclInt, 1, NULL, 0,
                                                 0, ctx, 0, comms[0], streams[0]));
 }
 
 TEST_F(ncclOneSidedRma_test, put_signal_non_window_buffer) {
-  if (nVis < 2) return;
+  if (nVis < 2 || comms == NULL) return;
 
   // Allocate a buffer that is NOT registered in any window
   void *nonWinBuf = NULL;
@@ -239,7 +254,7 @@ TEST_F(ncclOneSidedRma_test, put_signal_non_window_buffer) {
 }
 
 TEST_F(ncclOneSidedRma_test, put_signal_invalid_peer) {
-  if (nVis < 2) return;
+  if (nVis < 2 || comms == NULL) return;
 
   // Peer == -1 (negative)
   ASSERT_EQ(ncclInvalidArgument, ncclPutSignal(sendbuffs[0], 1024, ncclInt, -1, recvwins[0], 0,
@@ -255,7 +270,7 @@ TEST_F(ncclOneSidedRma_test, put_signal_invalid_peer) {
 // ============================================================================
 
 TEST_F(ncclOneSidedRma_test, signal_invalid_peer) {
-  if (nVis < 2) return;
+  if (nVis < 2 || comms == NULL) return;
 
   // Peer == -1 (negative)
   ASSERT_EQ(ncclInvalidArgument, ncclSignal(-1, 0, ctx, 0, comms[0], streams[0]));
@@ -269,20 +284,20 @@ TEST_F(ncclOneSidedRma_test, signal_invalid_peer) {
 // ============================================================================
 
 TEST_F(ncclOneSidedRma_test, wait_signal_null_descs) {
-  if (nVis < 2) return;
+  if (nVis < 2 || comms == NULL) return;
 
   ASSERT_EQ(ncclInvalidArgument, ncclWaitSignal(1, NULL, comms[0], streams[0]));
 }
 
 TEST_F(ncclOneSidedRma_test, wait_signal_zero_ndesc) {
-  if (nVis < 2) return;
+  if (nVis < 2 || comms == NULL) return;
 
   ncclWaitSignalDesc_t desc = {.opCnt = 1, .peer = 1, .sigIdx = 0, .ctx = 0};
   ASSERT_EQ(ncclInvalidArgument, ncclWaitSignal(0, &desc, comms[0], streams[0]));
 }
 
 TEST_F(ncclOneSidedRma_test, wait_signal_invalid_opcnt) {
-  if (nVis < 2) return;
+  if (nVis < 2 || comms == NULL) return;
 
   // opCnt == 0
   ncclWaitSignalDesc_t desc = {.opCnt = 0, .peer = 1, .sigIdx = 0, .ctx = 0};
@@ -294,14 +309,14 @@ TEST_F(ncclOneSidedRma_test, wait_signal_invalid_opcnt) {
 }
 
 TEST_F(ncclOneSidedRma_test, wait_signal_invalid_sigidx) {
-  if (nVis < 2) return;
+  if (nVis < 2 || comms == NULL) return;
 
   ncclWaitSignalDesc_t desc = {.opCnt = 1, .peer = 1, .sigIdx = 1, .ctx = 0};
   ASSERT_EQ(ncclInvalidArgument, ncclWaitSignal(1, &desc, comms[0], streams[0]));
 }
 
 TEST_F(ncclOneSidedRma_test, wait_signal_invalid_ctx) {
-  if (nVis < 2) return;
+  if (nVis < 2 || comms == NULL) return;
 
   ncclWaitSignalDesc_t desc = {.opCnt = 1, .peer = 1, .sigIdx = 0, .ctx = 99};
   ASSERT_EQ(ncclInvalidArgument, ncclWaitSignal(1, &desc, comms[0], streams[0]));
