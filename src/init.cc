@@ -967,6 +967,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     bool nicFused;
     int localNetDeviceCount;
     int localCollNetCount;
+    int isAllNvlink;
     bool isMultiRankGpu;
   };
 
@@ -1237,6 +1238,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   allGather3Data[rank].isMultiRankGpu = comm->isMultiRankGpu;
   NCCLCHECKGOTO(ncclTopoGetMinNetBw(comm->topo, comm->rank, &allGather3Data[rank].minNetBw), ret, fail);
 
+  NCCLCHECK(ncclTopoPathAllNVLink(comm->topo, &comm->isAllNvlink));
+  allGather3Data[rank].isAllNvlink = comm->isAllNvlink;
+
   comm->nChannels = std::min(treeGraph->nChannels, ringGraph->nChannels);
   NCCLCHECKGOTO(ncclTopoPreset(comm, graphs, &allGather3Data[rank].topoRanks), ret, fail);
 
@@ -1275,6 +1279,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     maxLocalCollNetCount = std::max(maxLocalCollNetCount, allGather3Data[r].localCollNetCount);
     if (allGather3Data[r].isMultiRankGpu) {
       comm->isMultiRankGpu = true;
+    }
+    if (!allGather3Data[r].isAllNvlink) {
+      comm->isAllNvlink = 0;
     }
   }
   if (rank == 0) {
@@ -1426,7 +1433,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
       comm->config.collnetEnable = 0;
     }
   }
-  NCCLCHECK(ncclTopoPathAllNVLink(comm->topo, &comm->isAllNvlink));
   comm->isOneRPN = (comm->maxLocalRanks == 1);
 
   NCCLCHECKGOTO(ncclCalloc(&rings, nranks*MAXCHANNELS), ret, fail);
