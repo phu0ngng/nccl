@@ -21,7 +21,7 @@ public:
       multiTeamComms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
       EXPECT_NE(nullptr, multiTeamComms);
       EXPECT_EQ(ncclSuccess, ncclCommInitAll(multiTeamComms, nVis, NULL));
-      
+
       // Initialize devrState so that lsaTeamSize is initialized while NCCL_LSA_TEAM_SIZE is set to 2.
       for (int i = 0; i < nVis; i++) {
         ncclTeamLsa(multiTeamComms[i]);
@@ -56,7 +56,7 @@ public:
       fprintf(stderr, "ncclCommQueryProperties failed\n");
       return TestResult_t::testError;
     }
-    
+
     // The environment variable logic is a bit finicky. Add a check here to ensure
     // NCCL_LSA_TEAM_SIZE=2 is actually respected.
     if (nVis > 2 && props.nLsaTeams == 1) {
