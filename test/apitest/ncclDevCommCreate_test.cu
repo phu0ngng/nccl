@@ -134,3 +134,17 @@ TEST_F(ncclDevCommCreate_test, gin_force_enable) {
   reqs.ginForceEnable = true;
   validateBasedOnDeviceApiSupport(comm, props, &reqs);
 }
+
+TEST_F(ncclDevCommCreate_test, world_gin_barrier_with_railed_gin) {
+  ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
+  ASSERT_EQ(ncclSuccess, ncclCommQueryProperties(comm, &props));
+  if (props.ginType == NCCL_GIN_TYPE_NONE || !props.deviceApiSupport) {
+    return;
+  }
+
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.worldGinBarrierCount = 1;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_RAIL;
+  ncclDevComm_t dcomm;
+  ASSERT_EQ(ncclInvalidArgument, ncclDevCommCreate(comm, &reqs, &dcomm));
+}
