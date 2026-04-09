@@ -639,8 +639,10 @@ nccl_ep_ci:
     - setup-eos
     - setup-pre-nyx
   rules:
-    - <<: *pre_submit_rule
-    - if: $RUN_ON_IPP6 == "1" && $RUN_NCCL_EP_CI == "1"
+    - changes:
+      - "contrib/nccl_ep/**/*"
+    - <<: *nightly_rule
+    - if: $RUN_NCCL_EP_CI == "1"
       when: always
     - when: never
   trigger:
@@ -648,6 +650,7 @@ nccl_ep_ci:
     strategy: depend
   variables:
     PARENT_PIPELINE_ID: $CI_PIPELINE_ID
+
 github-sim:
   stage: downstream
   needs: []
