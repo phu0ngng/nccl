@@ -48,23 +48,23 @@ static ::testing::Environment* const nocache_env =
 
 // Cached param in the no-cache set — should reload on every access
 DEFINE_NCCL_PARAM(testNoCacheTarget, int32_t, TEST_NOCACHE_TARGET, 1,
-                  NCCL_PARAM_FLAG_CACHED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_CACHED, NCCL_PARAM_DEFAULT, "");
 
 // Another Cached param in the no-cache set
 DEFINE_NCCL_PARAM(testNoCacheSpecific, int32_t, TEST_NOCACHE_SPECIFIC, 2,
-                  NCCL_PARAM_FLAG_CACHED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_CACHED, NCCL_PARAM_DEFAULT, "");
 
 // Cached param NOT in the no-cache set — should cache normally
 DEFINE_NCCL_PARAM(testNoCacheOther, int32_t, TEST_NOCACHE_OTHER, 2,
-                  NCCL_PARAM_FLAG_CACHED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_CACHED, NCCL_PARAM_DEFAULT, "");
 
 // Non-cached (Default) param — always reloads, NCCL_NO_CACHE irrelevant
 DEFINE_NCCL_PARAM(testNoCacheDefault, int32_t, TEST_NOCACHE_DEFAULT, 3,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 
 // Cached param NOT in the no-cache set — for testing empty/absent key
 DEFINE_NCCL_PARAM(testNoCacheAbsent, int32_t, TEST_NOCACHE_ABSENT, 5,
-                  NCCL_PARAM_FLAG_CACHED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_CACHED, NCCL_PARAM_DEFAULT, "");
 
 // ============================================================================
 // Test Fixture

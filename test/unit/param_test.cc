@@ -5,7 +5,7 @@
  * See LICENSE.txt for more license information
  *************************************************************************/
 
-// Unit tests for the NcclParam framework (param.h + c_api.h)
+// Unit tests for the ncclParam framework (param.h + c_api.h)
 //
 // All parameters use TEST_* prefixed keys to avoid collision with
 // production NCCL_* parameters that may be registered by nccl_static.
@@ -65,76 +65,76 @@ static auto testBitmaskOptionSet = makeOptions(
 
 // --- Group 1-2: Basic types ---
 DEFINE_NCCL_PARAM(testDefineUseParam, int32_t, TEST_DEFINE_USE, 42,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testIntDefault, int32_t, TEST_INT_DEFAULT, 100,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testIntFromEnv, int32_t, TEST_INT_FROM_ENV, 100,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testBoolDefault, bool, TEST_BOOL_DEFAULT, false,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testBoolFromEnv, bool, TEST_BOOL_FROM_ENV, false,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testEnumOptions, int32_t, TEST_ENUM_OPTIONS, TEST_ENUM_NONE,
-                  NCCL_PARAM_FLAG_NONE, NcclParamOneOf(testEnumOptionSet), "");
+                  NCCL_PARAM_FLAG_NONE, ncclParamOneOf(testEnumOptionSet), "");
 DEFINE_NCCL_PARAM(testBitmaskOptions, uint32_t, TEST_BITMASK_OPTIONS, 0u,
-                  NCCL_PARAM_FLAG_NONE, NcclParamBitsetOf<TestBitmaskOption>(testBitmaskOptionSet), "");
+                  NCCL_PARAM_FLAG_NONE, ncclParamBitsetOf<TestBitmaskOption>(testBitmaskOptionSet), "");
 DEFINE_NCCL_PARAM(testIntInvalidEnv, int32_t, TEST_INT_INVALID_ENV, 77,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testEnumInvalidEnv, int32_t, TEST_ENUM_INVALID_ENV, TEST_ENUM_WARN,
-                  NCCL_PARAM_FLAG_NONE, NcclParamOneOf(testEnumOptionSet), "");
+                  NCCL_PARAM_FLAG_NONE, ncclParamOneOf(testEnumOptionSet), "");
 
 // --- Group 3: Env reload ---
 DEFINE_NCCL_PARAM(testReloadable, int32_t, TEST_RELOADABLE, 10,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 
 // --- Group 4: Cached (separate keys per scenario) ---
 DEFINE_NCCL_PARAM(testMaxRetriesFromEnv, int32_t, TEST_MAX_RETRIES_FROM_ENV, 3,
-                  NCCL_PARAM_FLAG_CACHED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_CACHED, NCCL_PARAM_DEFAULT, "");
 
 // --- Group 5: Bounded ---
 DEFINE_NCCL_PARAM(testBoundedValid, int32_t, TEST_BOUNDED_VALID, 4,
-                  NCCL_PARAM_FLAG_NONE, NcclParamBounded(1, 64), "");
+                  NCCL_PARAM_FLAG_NONE, ncclParamBounded(1, 64), "");
 DEFINE_NCCL_PARAM(testBoundedInvalid, int32_t, TEST_BOUNDED_INVALID, 4,
-                  NCCL_PARAM_FLAG_NONE, NcclParamBounded(1, 64), "");
+                  NCCL_PARAM_FLAG_NONE, ncclParamBounded(1, 64), "");
 DEFINE_NCCL_PARAM(testLowerBoundOnly, int32_t, TEST_LOWER_BOUND_ONLY, 10,
-                  NCCL_PARAM_FLAG_NONE, NcclParamBounded(0), "");
+                  NCCL_PARAM_FLAG_NONE, ncclParamBounded(0), "");
 
 // --- Group 6: String ---
 DEFINE_NCCL_PARAM(testStringDefault, const char*, TEST_STRING_DEFAULT, nullptr,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testStringCustom, const char*, TEST_STRING_CUSTOM, nullptr,
-                  NCCL_PARAM_FLAG_PUBLISHED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_PUBLISHED, NCCL_PARAM_DEFAULT, "");
 
 // --- Group 7: Dump ---
 DEFINE_NCCL_PARAM(testPublishedParam, int32_t, TEST_PUBLISHED_PARAM, 99,
-                  NCCL_PARAM_FLAG_PUBLISHED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_PUBLISHED, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testPrivateParam, int32_t, TEST_PRIVATE_PARAM, 88,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testDeprecatedParam, int32_t, TEST_DEPRECATED_PARAM, 55,
-                  NCCL_PARAM_FLAG_PUBLISHED | NCCL_PARAM_FLAG_DEPRECATED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_PUBLISHED | NCCL_PARAM_FLAG_DEPRECATED, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testPublishedReadOnly, int32_t, TEST_PUBLISHED_READONLY, 66,
-                  NCCL_PARAM_FLAG_PUBLISHED | NCCL_PARAM_FLAG_CACHED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_PUBLISHED | NCCL_PARAM_FLAG_CACHED, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testPublishedEnumOptions, int32_t, TEST_PUBLISHED_ENUM_OPTIONS, 0,
-                  NCCL_PARAM_FLAG_PUBLISHED, NcclParamOneOf(testEnumOptionSet), "");
+                  NCCL_PARAM_FLAG_PUBLISHED, ncclParamOneOf(testEnumOptionSet), "");
 DEFINE_NCCL_PARAM(testPublishedBitmaskOptions, uint32_t, TEST_PUBLISHED_BITMASK_OPTIONS, 0u,
-                  NCCL_PARAM_FLAG_PUBLISHED, NcclParamBitsetOf<TestBitmaskOption>(testBitmaskOptionSet), "");
+                  NCCL_PARAM_FLAG_PUBLISHED, ncclParamBitsetOf<TestBitmaskOption>(testBitmaskOptionSet), "");
 
 // --- Group 8: C API ---
 DEFINE_NCCL_PARAM(testCApiInt, int32_t, TEST_CAPI_INT, 42,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testCApiLong, int64_t, TEST_CAPI_LONG, 1000,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testCApiString, const char*, TEST_CAPI_STRING, nullptr,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 // --- Group 9: Option descriptions ---
 DEFINE_NCCL_PARAM(testDescEnumParam, int32_t, TEST_DESC_ENUM, 0,
-                  NCCL_PARAM_FLAG_PUBLISHED, NcclParamOneOf(testDescEnumOptionSet), "");
+                  NCCL_PARAM_FLAG_PUBLISHED, ncclParamOneOf(testDescEnumOptionSet), "");
 
 // --- Group 10: Source tracking ---
 DEFINE_NCCL_PARAM(testSourceDefault, int32_t, TEST_SOURCE_DEFAULT, 42,
-                  NCCL_PARAM_FLAG_PUBLISHED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_PUBLISHED, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testSourceEnvPlugin, int32_t, TEST_SOURCE_ENVPLUGIN, 42,
-                  NCCL_PARAM_FLAG_PUBLISHED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_PUBLISHED, NCCL_PARAM_DEFAULT, "");
 
 // ============================================================================
 // Test Fixture
@@ -324,9 +324,10 @@ TEST_F(NcclParamTest, Dump_PublishedHasContent) {
   EXPECT_NE(d.find("default="), std::string::npos);
 }
 
-TEST_F(NcclParamTest, Dump_PrivateReturnsEmpty) {
+TEST_F(NcclParamTest, Dump_PrivateHasContent) {
   std::string d = testPrivateParam.dump();
-  EXPECT_TRUE(d.empty());
+  EXPECT_FALSE(d.empty());
+  EXPECT_NE(d.find("TEST_PRIVATE_PARAM"), std::string::npos);
 }
 
 TEST_F(NcclParamTest, Dump_DeprecatedShowsFlag) {
@@ -355,22 +356,15 @@ TEST_F(NcclParamTest, Dump_BitmaskOptionsShowsAcceptedValues) {
   EXPECT_NE(d.find("P2P"), std::string::npos);
 }
 
-TEST_F(NcclParamTest, Dump_ShowAllRevealsPrivateParam) {
-  // Without show_all, private param returns empty
-  std::string d1 = testPrivateParam.dump(false);
-  EXPECT_TRUE(d1.empty());
+TEST_F(NcclParamTest, Dump_AlwaysReturnsContent) {
+  // Both private and published params always return content from dump()
+  std::string d1 = testPrivateParam.dump();
+  EXPECT_FALSE(d1.empty());
+  EXPECT_NE(d1.find("TEST_PRIVATE_PARAM"), std::string::npos);
 
-  // With show_all, private param returns content
-  std::string d2 = testPrivateParam.dump(true);
+  std::string d2 = testPublishedParam.dump();
   EXPECT_FALSE(d2.empty());
-  EXPECT_NE(d2.find("TEST_PRIVATE_PARAM"), std::string::npos);
-}
-
-TEST_F(NcclParamTest, Dump_ShowAllStillShowsPublishedParam) {
-  // Published param is shown regardless of show_all
-  std::string d = testPublishedParam.dump(true);
-  EXPECT_FALSE(d.empty());
-  EXPECT_NE(d.find("TEST_PUBLISHED_PARAM"), std::string::npos);
+  EXPECT_NE(d2.find("TEST_PUBLISHED_PARAM"), std::string::npos);
 }
 
 // ============================================================================
@@ -394,89 +388,99 @@ TEST_F(NcclParamTest, DumpAllFlag_SetFromEnv) {
 
 TEST_F(NcclParamTest, CApi_BindSuccess) {
   ncclParamHandle_t* h = nullptr;
-  EXPECT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), NCCL_PARAM_OK);
+  EXPECT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), ncclSuccess);
   EXPECT_NE(h, nullptr);
 }
 
 TEST_F(NcclParamTest, CApi_NotFoundErrors) {
   // Bind
   ncclParamHandle_t* h = nullptr;
-  EXPECT_EQ(ncclParamBind(&h, "TEST_NONEXISTENT_KEY_XYZ"), NCCL_PARAM_NOT_FOUND);
+  EXPECT_EQ(ncclParamBind(&h, "TEST_NONEXISTENT_KEY_XYZ"), ncclInvalidArgument);
 
   // GetParameter
   const char* val = nullptr;
   int len = 0;
-  EXPECT_EQ(ncclParamGetParameter("TEST_NONEXISTENT_KEY_XYZ", &val, &len), NCCL_PARAM_NOT_FOUND);
+  EXPECT_EQ(ncclParamGetParameter("TEST_NONEXISTENT_KEY_XYZ", &val, &len), ncclInvalidArgument);
 }
 
 TEST_F(NcclParamTest, CApi_TypedGetI32) {
   ncclParamHandle_t* h = nullptr;
-  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), NCCL_PARAM_OK);
+  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), ncclSuccess);
 
   int32_t val = 0;
-  EXPECT_EQ(ncclParamGetI32(h, &val), NCCL_PARAM_OK);
+  EXPECT_EQ(ncclParamGetI32(h, &val), ncclSuccess);
   EXPECT_EQ(val, 42);
 }
 
 TEST_F(NcclParamTest, CApi_TypeMismatch) {
   ncclParamHandle_t* h = nullptr;
-  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), NCCL_PARAM_OK);
+  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), ncclSuccess);
 
   int64_t val = 0;
-  EXPECT_EQ(ncclParamGetI64(h, &val), NCCL_PARAM_TYPE_MISMATCH);
+  EXPECT_EQ(ncclParamGetI64(h, &val), ncclInvalidArgument);
 }
 
 TEST_F(NcclParamTest, CApi_NullArgErrors) {
   ncclParamHandle_t* h = nullptr;
-  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), NCCL_PARAM_OK);
+  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), ncclSuccess);
 
   // Bind null args
   ncclParamHandle_t* h2 = nullptr;
-  EXPECT_EQ(ncclParamBind(nullptr, "TEST_CAPI_INT"), NCCL_PARAM_BAD_ARGUMENT);
-  EXPECT_EQ(ncclParamBind(&h2, nullptr), NCCL_PARAM_BAD_ARGUMENT);
+  EXPECT_EQ(ncclParamBind(nullptr, "TEST_CAPI_INT"), ncclInvalidArgument);
+  EXPECT_EQ(ncclParamBind(&h2, nullptr), ncclInvalidArgument);
 
   // Get null args
-  EXPECT_EQ(ncclParamGetI32(h, nullptr), NCCL_PARAM_BAD_ARGUMENT);
+  EXPECT_EQ(ncclParamGetI32(h, nullptr), ncclInvalidArgument);
   int32_t val = 0;
-  EXPECT_EQ(ncclParamGetI32(nullptr, &val), NCCL_PARAM_BAD_ARGUMENT);
+  EXPECT_EQ(ncclParamGetI32(nullptr, &val), ncclInvalidArgument);
 
   // GetParameter null args
   const char* str = nullptr;
   int len = 0;
-  EXPECT_EQ(ncclParamGetParameter(nullptr, &str, &len), NCCL_PARAM_BAD_ARGUMENT);
-  EXPECT_EQ(ncclParamGetParameter("TEST_CAPI_INT", nullptr, &len), NCCL_PARAM_BAD_ARGUMENT);
-  EXPECT_EQ(ncclParamGetParameter("TEST_CAPI_INT", &str, nullptr), NCCL_PARAM_BAD_ARGUMENT);
+  EXPECT_EQ(ncclParamGetParameter(nullptr, &str, &len), ncclInvalidArgument);
+  EXPECT_EQ(ncclParamGetParameter("TEST_CAPI_INT", nullptr, &len), ncclInvalidArgument);
+  EXPECT_EQ(ncclParamGetParameter("TEST_CAPI_INT", &str, nullptr), ncclInvalidArgument);
 
   // GetAllParameterKeys null args
   const char** keys = nullptr;
   int count = 0;
-  EXPECT_EQ(ncclParamGetAllParameterKeys(nullptr, &count), NCCL_PARAM_BAD_ARGUMENT);
-  EXPECT_EQ(ncclParamGetAllParameterKeys(&keys, nullptr), NCCL_PARAM_BAD_ARGUMENT);
+  EXPECT_EQ(ncclParamGetAllParameterKeys(nullptr, &count), ncclInvalidArgument);
+  EXPECT_EQ(ncclParamGetAllParameterKeys(&keys, nullptr), ncclInvalidArgument);
 }
 
 TEST_F(NcclParamTest, CApi_GetStr) {
+  SetEnv("TEST_CAPI_STRING", "/tmp/getstr.log");
+
   ncclParamHandle_t* h = nullptr;
-  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), NCCL_PARAM_OK);
+  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_STRING"), ncclSuccess);
 
   const char* str = nullptr;
-  EXPECT_EQ(ncclParamGetStr(h, &str), NCCL_PARAM_OK);
+  EXPECT_EQ(ncclParamGetStr(h, &str), ncclSuccess);
   ASSERT_NE(str, nullptr);
-  EXPECT_STREQ(str, "42");
+  EXPECT_STREQ(str, "/tmp/getstr.log");
+
+  // Type mismatch: GetStr on a non-string param
+  ncclParamHandle_t* hInt = nullptr;
+  ASSERT_EQ(ncclParamBind(&hInt, "TEST_CAPI_INT"), ncclSuccess);
+  EXPECT_EQ(ncclParamGetStr(hInt, &str), ncclInvalidArgument);
 }
 
 TEST_F(NcclParamTest, CApi_GetParameter) {
   const char* val = nullptr;
   int len = 0;
-  EXPECT_EQ(ncclParamGetParameter("TEST_CAPI_INT", &val, &len), NCCL_PARAM_OK);
+  EXPECT_EQ(ncclParamGetParameter("TEST_CAPI_INT", &val, &len), ncclSuccess);
   ASSERT_NE(val, nullptr);
   EXPECT_GT(len, 0);
   EXPECT_EQ(std::string(val, len), "42");
 }
 
 TEST_F(NcclParamTest, CApi_GetAllParameterKeys) {
+  // Enable showAll so non-published TEST_* keys are included
+  SetEnv("NCCL_PARAM_DUMP_ALL", "TRUE");
+
   const char** keys = nullptr;
   int count = 0;
-  EXPECT_EQ(ncclParamGetAllParameterKeys(&keys, &count), NCCL_PARAM_OK);
+  EXPECT_EQ(ncclParamGetAllParameterKeys(&keys, &count), ncclSuccess);
   EXPECT_GT(count, 0);
 
   std::set<std::string> key_set;
@@ -493,11 +497,11 @@ TEST_F(NcclParamTest, CApi_GetAllParameterKeys) {
 
 TEST_F(NcclParamTest, CApi_BindMacro) {
   BIND_NCCL_PARAM(handle, "TEST_CAPI_INT");
-  EXPECT_EQ(handleSt, NCCL_PARAM_OK);
+  EXPECT_EQ(handleSt, ncclSuccess);
   EXPECT_NE(handle, nullptr);
 
   int32_t val = 0;
-  EXPECT_EQ(ncclParamGetI32(handle, &val), NCCL_PARAM_OK);
+  EXPECT_EQ(ncclParamGetI32(handle, &val), ncclSuccess);
   EXPECT_EQ(val, 42);
 }
 
@@ -505,11 +509,11 @@ TEST_F(NcclParamTest, CApi_StringParam) {
   SetEnv("TEST_CAPI_STRING", "/tmp/test.log");
 
   ncclParamHandle_t* h = nullptr;
-  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_STRING"), NCCL_PARAM_OK);
+  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_STRING"), ncclSuccess);
 
   // GetStr returns the string value
   const char* str = nullptr;
-  EXPECT_EQ(ncclParamGetStr(h, &str), NCCL_PARAM_OK);
+  EXPECT_EQ(ncclParamGetStr(h, &str), ncclSuccess);
   ASSERT_NE(str, nullptr);
   EXPECT_STREQ(str, "/tmp/test.log");
 }
@@ -520,22 +524,22 @@ TEST_F(NcclParamTest, CApi_StringParam) {
 
 TEST_F(NcclParamTest, CApi_GetRawInt32) {
   ncclParamHandle_t* h = nullptr;
-  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), NCCL_PARAM_OK);
+  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), ncclSuccess);
 
   int32_t val = 0;
   int len = 0;
-  EXPECT_EQ(ncclParamGet(h, &val, static_cast<int>(sizeof(val)), &len), NCCL_PARAM_OK);
+  EXPECT_EQ(ncclParamGet(h, &val, static_cast<int>(sizeof(val)), &len), ncclSuccess);
   EXPECT_EQ(len, static_cast<int>(sizeof(int32_t)));
   EXPECT_EQ(val, 42);
 }
 
 TEST_F(NcclParamTest, CApi_GetRawInt64) {
   ncclParamHandle_t* h = nullptr;
-  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_LONG"), NCCL_PARAM_OK);
+  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_LONG"), ncclSuccess);
 
   int64_t val = 0;
   int len = 0;
-  EXPECT_EQ(ncclParamGet(h, &val, static_cast<int>(sizeof(val)), &len), NCCL_PARAM_OK);
+  EXPECT_EQ(ncclParamGet(h, &val, static_cast<int>(sizeof(val)), &len), ncclSuccess);
   EXPECT_EQ(len, static_cast<int>(sizeof(int64_t)));
   EXPECT_EQ(val, 1000);
 }
@@ -544,11 +548,11 @@ TEST_F(NcclParamTest, CApi_GetRawString) {
   SetEnv("TEST_CAPI_STRING", "/tmp/test.log");
 
   ncclParamHandle_t* h = nullptr;
-  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_STRING"), NCCL_PARAM_OK);
+  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_STRING"), ncclSuccess);
 
   char buf[256] = {};
   int len = 0;
-  EXPECT_EQ(ncclParamGet(h, buf, static_cast<int>(sizeof(buf)), &len), NCCL_PARAM_OK);
+  EXPECT_EQ(ncclParamGet(h, buf, static_cast<int>(sizeof(buf)), &len), ncclSuccess);
   EXPECT_EQ(len, static_cast<int>(strlen("/tmp/test.log") + 1));
   EXPECT_STREQ(buf, "/tmp/test.log");
 }
@@ -556,23 +560,23 @@ TEST_F(NcclParamTest, CApi_GetRawString) {
 // const char* param with null default: raw copy yields a single '\0' byte
 TEST_F(NcclParamTest, CApi_GetRawStringNullDefault) {
   ncclParamHandle_t* h = nullptr;
-  ASSERT_EQ(ncclParamBind(&h, "TEST_STRING_DEFAULT"), NCCL_PARAM_OK);
+  ASSERT_EQ(ncclParamBind(&h, "TEST_STRING_DEFAULT"), ncclSuccess);
 
   char buf[16];
   buf[0] = '\x7F';  // Sentinel — verifies first byte is overwritten
   int len = 0;
-  EXPECT_EQ(ncclParamGet(h, buf, static_cast<int>(sizeof(buf)), &len), NCCL_PARAM_OK);
+  EXPECT_EQ(ncclParamGet(h, buf, static_cast<int>(sizeof(buf)), &len), ncclSuccess);
   EXPECT_EQ(len, 1);
   EXPECT_EQ(buf[0], '\0');
 }
 
 TEST_F(NcclParamTest, CApi_GetRawBufferTooSmall) {
   ncclParamHandle_t* h = nullptr;
-  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), NCCL_PARAM_OK);
+  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), ncclSuccess);
 
   int8_t small = 0;
   int len = 99;  // Should be reset to 0 on error
-  EXPECT_EQ(ncclParamGet(h, &small, static_cast<int>(sizeof(small)), &len), NCCL_PARAM_BAD_ARGUMENT);
+  EXPECT_EQ(ncclParamGet(h, &small, static_cast<int>(sizeof(small)), &len), ncclInvalidArgument);
   EXPECT_EQ(len, 0);
 }
 
@@ -580,25 +584,25 @@ TEST_F(NcclParamTest, CApi_GetRawStringBufferTooSmall) {
   SetEnv("TEST_CAPI_STRING", "hello");
 
   ncclParamHandle_t* h = nullptr;
-  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_STRING"), NCCL_PARAM_OK);
+  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_STRING"), ncclSuccess);
 
   char tiny[2] = {};
   int len = 0;
   // "hello" + null terminator = 6 bytes; buffer holds only 2
-  EXPECT_EQ(ncclParamGet(h, tiny, static_cast<int>(sizeof(tiny)), &len), NCCL_PARAM_BAD_ARGUMENT);
+  EXPECT_EQ(ncclParamGet(h, tiny, static_cast<int>(sizeof(tiny)), &len), ncclInvalidArgument);
   EXPECT_EQ(len, 0);
 }
 
 TEST_F(NcclParamTest, CApi_GetRawNullArgs) {
   ncclParamHandle_t* h = nullptr;
-  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), NCCL_PARAM_OK);
+  ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), ncclSuccess);
 
   int32_t val = 0;
   int len = 0;
-  EXPECT_EQ(ncclParamGet(nullptr, &val, static_cast<int>(sizeof(val)), &len), NCCL_PARAM_BAD_ARGUMENT);
-  EXPECT_EQ(ncclParamGet(h, nullptr, static_cast<int>(sizeof(val)), &len), NCCL_PARAM_BAD_ARGUMENT);
-  EXPECT_EQ(ncclParamGet(h, &val, static_cast<int>(sizeof(val)), nullptr), NCCL_PARAM_BAD_ARGUMENT);
-  EXPECT_EQ(ncclParamGet(h, &val, 0, &len), NCCL_PARAM_BAD_ARGUMENT);
+  EXPECT_EQ(ncclParamGet(nullptr, &val, static_cast<int>(sizeof(val)), &len), ncclInvalidArgument);
+  EXPECT_EQ(ncclParamGet(h, nullptr, static_cast<int>(sizeof(val)), &len), ncclInvalidArgument);
+  EXPECT_EQ(ncclParamGet(h, &val, static_cast<int>(sizeof(val)), nullptr), ncclInvalidArgument);
+  EXPECT_EQ(ncclParamGet(h, &val, 0, &len), ncclInvalidArgument);
 }
 
 // ============================================================================
