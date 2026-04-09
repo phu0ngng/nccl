@@ -2662,6 +2662,7 @@ perftest-single-pre-tyche:
     SYMMETRIC: 1
     CE_COLL: 1
     RMA: 1
+    TMA: 1
     ENABLE_MNNVL_TUNER_PLUGIN: 1
     SKIP_MULTI_RANK_GPU: "0"
   script:

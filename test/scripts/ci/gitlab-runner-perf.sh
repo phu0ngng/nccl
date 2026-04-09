@@ -103,6 +103,18 @@ then
     run_command "${func}_send_reg_symm_kernel" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts -n 1 -R 3"
     run_command "${func}_recv_reg_symm_kernel" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts -n 1 -R 4"
   done
+
+  if [ "$TMA" == "1" ];
+  then
+    for func in all_reduce_perf reduce_scatter_perf; do
+      run_command "${func}_tma_symm_memory_sweep" $RUN_MODE $NGPUS "" "NCCL_NVLS_ENABLE=0 NCCL_SYM_TMA_ENABLE=1" "$NCCL_HOME/test/perf/$func" "-b 32K -e $MAX -f 2 -R 2"
+    done
+
+    func=all_gather_perf
+    run_command "${func}_tma_symm_memory_sweep" $RUN_MODE $NGPUS "" "NCCL_SYM_CE_THRESHOLD=$((1024*1024*1024)) NCCL_NVLS_ENABLE=0 NCCL_SYM_TMA_ENABLE=1" "$NCCL_HOME/test/perf/$func" "-b 32K -e $MAX -f 2 -R 2"
+    run_command "${func}_tma_symm_nvls_memory_sweep" $RUN_MODE $NGPUS "" "NCCL_SYM_CE_THRESHOLD=$((1024*1024*1024)) NCCL_NVLS_ENABLE=1 NCCL_SYM_TMA_ENABLE=1" "$NCCL_HOME/test/perf/$func" "-b 32K -e $MAX -f 2 -R 2"
+    unset
+  fi
 fi
 
 if [ "$DEVICE_API" != "0" ]; then
