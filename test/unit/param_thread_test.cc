@@ -85,23 +85,23 @@ private:
 // ============================================================================
 
 DEFINE_NCCL_PARAM(testThreadCachedRead, int32_t, TEST_THREAD_CACHED_READ, 0,
-                  NCCL_PARAM_FLAG_CACHED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_CACHED, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testThreadNonCachedRead, int32_t, TEST_THREAD_NONCACHED_READ, 0,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testThreadCachedFastPath, int32_t, TEST_THREAD_CACHED_FAST, 0,
-                  NCCL_PARAM_FLAG_CACHED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_CACHED, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testThreadRegistryA, int32_t, TEST_THREAD_REG_A, 0,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testThreadRegistryB, int32_t, TEST_THREAD_REG_B, 0,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testThreadString, const char*, TEST_THREAD_STRING, nullptr,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testThreadToString, int32_t, TEST_THREAD_TOSTR, 0,
-                  NCCL_PARAM_FLAG_NONE, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_NONE, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testThreadDump, int32_t, TEST_THREAD_DUMP, 0,
-                  NCCL_PARAM_FLAG_PUBLISHED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_PUBLISHED, NCCL_PARAM_DEFAULT, "");
 DEFINE_NCCL_PARAM(testThreadCachedRace, int32_t, TEST_THREAD_CACHED_RACE, 0,
-                  NCCL_PARAM_FLAG_CACHED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_CACHED, NCCL_PARAM_DEFAULT, "");
 
 // ============================================================================
 // Test 1: ConcurrentCachedReads
@@ -204,8 +204,8 @@ TEST_F(NcclParamThreadTest, ConcurrentRegistryFind) {
                            barrier.wait();
                            for (int i = 0; i < kIterations; ++i) {
                              const char* key = (i % 2 == 0) ? "TEST_THREAD_REG_A" : "TEST_THREAD_REG_B";
-                             NcclParamBase* p = NcclParamRegistry::find(key);
-                             if (p == nullptr) ok.store(false, std::memory_order_relaxed);
+                             auto* entry = ncclParamRegistry::find(key);
+                             if (entry == nullptr) ok.store(false, std::memory_order_relaxed);
                            }
                          });
   }
@@ -281,7 +281,7 @@ TEST_F(NcclParamThreadTest, ConcurrentDump) {
     threads.emplace_back([&]() {
                            barrier.wait();
                            for (int i = 0; i < kIterations; ++i) {
-                             std::string d = testThreadDump.dump(true);
+                             std::string d = testThreadDump.dump();
                              if (d.find("TEST_THREAD_DUMP") == std::string::npos) {
                                ok.store(false, std::memory_order_relaxed);
                              }
@@ -320,7 +320,7 @@ TEST_F(NcclParamThreadTest, CachedFirstLoad_AllThreadsSeeCorrectValue) {
 // ============================================================================
 
 DEFINE_NCCL_PARAM(testNoCacheThread, int32_t, TEST_NOCACHE_THREAD, 0,
-                  NCCL_PARAM_FLAG_CACHED, NcclParamParserDefault, "");
+                  NCCL_PARAM_FLAG_CACHED, NCCL_PARAM_DEFAULT, "");
 
 TEST_F(NcclParamThreadTest, ThreadSafety_ConcurrentReadsOnNoCacheParam) {
   SetEnv("TEST_NOCACHE_THREAD", "42");

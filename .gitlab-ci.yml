@@ -43,6 +43,7 @@ variables:
   # Toggle variables for clusters
   RUN_ON_AWS: "0"
   RUN_ON_CW_DFW: "0"
+  RUN_ON_DGXSPARK: "0"
   RUN_ON_DRACO_OCI: "0"
   RUN_ON_EOS: "0"
   RUN_ON_IPP6: "0"
@@ -51,12 +52,12 @@ variables:
   RUN_ON_THEIA: "0"
   RUN_ON_BIA: "0"
   RUN_ON_POLYPHE: "0"
+  RUN_ON_WINDOWS: "0"
   # Polyphe NVL576 cross-clique CI (see test/scripts/ci/README-polyphe-nvl576-ci.md)
   RUN_POLYPHE_NVL576_CI: "0"
   RUN_POLYPHE_NVL576_MEGA: "0"
   POLYPHE_NVL576_MULTI_NVLD_WEEKLY: "0"
   POLYPHE_NVL576_SCALE_ON_NIGHTLY: "0"
-  RUN_ON_WINDOWS: "0"
   # Toggle variables for GC nodes
   RUN_ON_A100: "0"
   RUN_ON_P100: "0"
@@ -73,11 +74,11 @@ variables:
   RUN_PROFILER_TESTS: "0"
   RUN_INSPECTOR_TESTS: "0"
   RUN_PERF_REGRESSION: "0"
+  # Toggle variables for downstream pipelines
+  RUN_NCCL_EP_CI: "0"
   RUN_NCCL4PY_CI: "0"
-  RUN_DDP_TEST: "0"
   # By default skip certain tests
   SKIP_MULTI_RANK_GPU: "1"
-  RUN_NCCL_EP_CI: "0"
 
 default:
   # set all jobs to interruptible by default
@@ -139,9 +140,25 @@ workflow:
   if: $COMPREHENSIVE_SWEEP == "debug" || $COMPREHENSIVE_SWEEP == "full"
   when: always
 
-# YAML anchor for public paths
-# This needs to be defined separately from PUBLIC_PATHS.txt as there's
-# no way for GitLab to read in the file list to use as a rule
+# YAML anchors for change-based pre-submit filtering
+# On pre-submit (MR) pipelines, jobs only run when their relevant paths are changed.
+# Post-submit, nightly, and weekly pipelines are unaffected (use *post_submit_rule).
+.core_paths: &core_paths
+  - "src/**/*"
+  - "makefiles/**/*"
+  - "Makefile"
+  - "CMakeLists.txt"
+  - "cmake/**/*"
+  - "test/**/*"
+  - "plugins/**/*"
+  - "ompi/**/*"
+  - "share/**/*"
+.nccl_ep_paths: &nccl_ep_paths
+  - "contrib/nccl_ep/**/*"
+.nccl4py_paths: &nccl4py_paths
+  - "bindings/nccl4py/**/*"
+.docs_paths: &docs_paths
+  - "docs/**/*"
 .public_paths: &public_paths
   - ".github/**/*"
   - "bindings/ir/**/*"
@@ -180,6 +197,32 @@ workflow:
   - "!pkg/conda/**/*"
   - "!pkg/doc/**/*"
 
+.pre_submit_core_rule: &pre_submit_core_rule
+  if: $TRIGGER_PIPELINE =~ /^(pre-submit)$/
+  changes:
+    paths: *core_paths
+  when: always
+.pre_submit_nccl_ep_rule: &pre_submit_nccl_ep_rule
+  if: $TRIGGER_PIPELINE =~ /^(pre-submit)$/
+  changes:
+    paths: *nccl_ep_paths
+  when: always
+.pre_submit_nccl4py_rule: &pre_submit_nccl4py_rule
+  if: $TRIGGER_PIPELINE =~ /^(pre-submit)$/
+  changes:
+    paths: *nccl4py_paths
+  when: always
+.pre_submit_docs_rule: &pre_submit_docs_rule
+  if: $TRIGGER_PIPELINE =~ /^(pre-submit)$/
+  changes:
+    paths: *docs_paths
+  when: always
+.pre_submit_public_rule: &pre_submit_public_rule
+  if: $TRIGGER_PIPELINE =~ /^(pre-submit)$/
+  changes:
+    paths: *public_paths
+  when: always
+
 ##
 ## Stage: build - Start...
 ##
@@ -205,12 +248,19 @@ build-ipp6:
   extends:
     - .ipp6
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+    - <<: *pre_submit_nccl_ep_rule
+    - <<: *pre_submit_nccl4py_rule
     - if: $RUN_ON_IPP6 == "1"
       when: always
     - if: $RUN_ON_DRACO_OCI == "1" || $RUN_ON_EOS == "1" || $RUN_ON_CW_DFW == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_AWS == "1"
       when: always
     - if: $RUN_ON_P100 == "1" || $RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1"
+      when: always
+    - if: $RUN_NCCL_EP_CI == "1"
+      when: always
+    - if: $RUN_NCCL4PY_CI == "1"
       when: always
     - when: never
   script:
@@ -228,7 +278,9 @@ build-docs:
   extends:
     - .ipp6
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || $BUILD_DOCS == "1"
+    - <<: *post_submit_rule
+    - <<: *pre_submit_docs_rule
+    - if: $BUILD_DOCS == "1"
       when: always
     - when: never
   variables:
@@ -246,7 +298,8 @@ build-dgxspark:
   extends:
     - .dgxspark
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_DGXSPARK == "1"
       when: always
   variables:
@@ -270,7 +323,8 @@ build-pre-tyche:
   extends:
     - .pre-tyche
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_PRE_TYCHE == "1"
       when: always
     - when: never
@@ -289,7 +343,8 @@ build-theia:
   extends:
     - .theia
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_THEIA == "1"
       when: always
     - when: never
@@ -308,7 +363,8 @@ build-bia:
   extends:
     - .bia
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_BIA == "1"
       when: always
     - when: never
@@ -327,7 +383,8 @@ build-polyphe:
   extends:
     - .polyphe
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_POLYPHE == "1"
       when: always
     - when: never
@@ -367,7 +424,8 @@ build-cmake:
   extends:
     - .ipp6
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $BUILD_CMAKE == "1"
       when: always
     - when: never
@@ -385,7 +443,8 @@ build-windows:
   extends:
     - .windows
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_WINDOWS == "1"
       when: always
     - when: never
@@ -412,7 +471,8 @@ setup-AWS-H100-EFA:
   extends:
     - .aws
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_AWS == "1"
       when: always
     - when: never
@@ -446,8 +506,12 @@ setup-pre-nyx:
     - .pre-nyx
     - .setup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+    - <<: *pre_submit_nccl_ep_rule
     - if: $RUN_ON_PRE_NYX == "1"
+      when: always
+    - if: $RUN_NCCL_EP_CI == "1"
       when: always
     - when: never
   needs: ["build-ipp6"]
@@ -461,7 +525,8 @@ setup-pre-tyche:
     - .pre-tyche
     - .setup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_PRE_TYCHE == "1"
       when: always
     - when: never
@@ -476,7 +541,8 @@ setup-theia:
     - .theia
     - .setup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_THEIA == "1"
       when: always
     - when: never
@@ -491,7 +557,8 @@ setup-bia:
     - .bia
     - .setup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_BIA == "1"
       when: always
     - when: never
@@ -506,7 +573,8 @@ setup-polyphe:
     - .polyphe
     - .setup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_POLYPHE == "1"
       when: always
     - when: never
@@ -521,7 +589,9 @@ setup-eos:
     - .eos
     - .setup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+    - <<: *pre_submit_nccl_ep_rule
     - if: $RUN_ON_EOS == "1"
       when: always
     - if: $RUN_NCCL_EP_CI == "1"
@@ -538,7 +608,8 @@ setup-cw-dfw:
     - .cw-dfw
     - .setup
   rules:
-    # - <<: *pre_submit_rule
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
     # - if: $RUN_ON_CW_DFW == "1"
     #   when: always
     - when: never
@@ -570,8 +641,15 @@ setup-ipp6:
   tags:
     - ipp6-nccl-setup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+    - <<: *pre_submit_nccl_ep_rule
+    - <<: *pre_submit_nccl4py_rule
     - if: $RUN_ON_IPP6 == "1"
+      when: always
+    - if: $RUN_NCCL_EP_CI == "1"
+      when: always
+    - if: $RUN_NCCL4PY_CI == "1"
       when: always
     - when: never
   needs: ["build-ipp6"]
@@ -587,7 +665,8 @@ setup-dgxspark:
   tags:
     - ipp6-nccl-setup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_DGXSPARK == "1"
       when: always
     - when: never
@@ -622,8 +701,10 @@ nccl4py_ci:
   needs:
     - setup-ipp6
   rules:
-    - <<: *pre_submit_rule
-    - if: $RUN_ON_IPP6 == "1" && $RUN_NCCL4PY_CI == "1"
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+    - <<: *pre_submit_nccl4py_rule
+    - if: $RUN_NCCL4PY_CI == "1"
       when: always
     - when: never
   trigger:
@@ -639,8 +720,9 @@ nccl_ep_ci:
     - setup-eos
     - setup-pre-nyx
   rules:
-    - <<: *pre_submit_rule
-    - if: $RUN_ON_IPP6 == "1" && $RUN_NCCL_EP_CI == "1"
+    - <<: *post_submit_rule
+    - <<: *pre_submit_nccl_ep_rule
+    - if: $RUN_NCCL_EP_CI == "1"
       when: always
     - when: never
   trigger:
@@ -648,13 +730,12 @@ nccl_ep_ci:
     strategy: depend
   variables:
     PARENT_PIPELINE_ID: $CI_PIPELINE_ID
+
 github-sim:
   stage: downstream
   needs: []
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit)$/
-      changes:
-        paths: *public_paths
+    - <<: *pre_submit_public_rule
     - when: never
   trigger:
     include:
@@ -882,7 +963,8 @@ unit-tests-eos:
   extends:
     - .eos
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_EOS == "1" && $RUN_UNIT_TESTS == "1"
       when: always
   needs:
@@ -940,7 +1022,8 @@ unit-tests-cw-dfw:
   extends:
     - .cw-dfw
   rules:
-    # - <<: *pre_submit_rule
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
     # - if: $RUN_ON_CW_DFW == "1" && $RUN_UNIT_TESTS == "1"
     #   when: always
     - when: never
@@ -993,7 +1076,8 @@ unit-tests-AWS-H100-EFA:
   extends:
     - .aws
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_AWS == "1" && $RUN_UNIT_TESTS == "1"
       when: always
   needs:
@@ -1165,7 +1249,8 @@ unit-tests-pre-nyx:
   extends:
     - .pre-nyx
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
       when: always
   needs:
@@ -1223,7 +1308,8 @@ unit-tests-pre-tyche:
   extends:
     - .pre-tyche
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1"
       when: always
   needs: ["setup-pre-tyche"]
@@ -1281,7 +1367,8 @@ unit-tests-ipp6-a40:
   extends:
     - .ipp6-a40
   rules:
-    # - <<: *pre_submit_rule
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
     # - if: $RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1"
     #   when: always
     - when: never
@@ -1334,7 +1421,8 @@ unit-tests-ipp6-a100:
   extends:
     - .ipp6-a100
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1"
       when: always
   needs:
@@ -1394,7 +1482,8 @@ unit-tests-dgxspark:
   extends:
     - .dgxspark
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_DGXSPARK == "1" && $RUN_UNIT_TESTS == "1"
       when: always
   needs:
@@ -1447,7 +1536,8 @@ unit-tests-theia:
   extends:
     - .theia
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1"
       when: always
   needs: ["setup-theia"]
@@ -1500,7 +1590,8 @@ unit-tests-bia:
   extends:
     - .bia
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_BIA == "1" && $RUN_UNIT_TESTS == "1"
       when: always
   needs: ["setup-bia"]
@@ -1545,7 +1636,8 @@ unit-tests-polyphe:
   extends:
     - .polyphe
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_POLYPHE == "1" && $RUN_UNIT_TESTS == "1"
       when: always
   needs: ["setup-polyphe"]
@@ -1845,7 +1937,8 @@ apitest-eos:
   extends:
     - .eos
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_EOS == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
@@ -1879,7 +1972,8 @@ apitest-cw-dfw:
   extends:
     - .cw-dfw
   rules:
-    # - <<: *pre_submit_rule
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
     # - if: $RUN_ON_CW_DFW == "1" && $RUN_API_TESTS == "1"
     #   when: always
     - when: never
@@ -1913,7 +2007,8 @@ apitest-AWS-H100-EFA:
   extends:
     - .aws
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_AWS == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
@@ -2027,7 +2122,8 @@ apitest-pre-nyx:
   extends:
     - .pre-nyx
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_PRE_NYX == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
@@ -2061,7 +2157,8 @@ apitest-pre-tyche:
   extends:
     - .pre-tyche
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_PRE_TYCHE == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
@@ -2094,7 +2191,8 @@ apitest-ipp6-a40:
   extends:
     - .ipp6-a40
   rules:
-    # - <<: *pre_submit_rule
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
     # - if: $RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1"
     #   when: always
     - when: never
@@ -2128,7 +2226,8 @@ apitest-ipp6-a100:
   extends:
     - .ipp6
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
@@ -2169,7 +2268,8 @@ apitest-dgxspark:
   extends:
     - .dgxspark
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_DGXSPARK == "1" && $RUN_API_TESTS == "1"
       when: always
   needs:
@@ -2202,7 +2302,8 @@ apitest-theia:
   extends:
     - .theia
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_THEIA == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
@@ -2235,7 +2336,8 @@ apitest-bia:
   extends:
     - .bia
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_BIA == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
@@ -2269,7 +2371,8 @@ apitest-polyphe:
   extends:
     - .polyphe
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_POLYPHE == "1" && $RUN_API_TESTS == "1"
       when: always
   needs: ["setup-polyphe"]
@@ -2441,7 +2544,8 @@ perftest-single-eos:
   extends:
     - .eos
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_EOS == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
@@ -2472,7 +2576,8 @@ perftest-single-cw-dfw:
   extends:
     - .cw-dfw
   rules:
-    # - <<: *pre_submit_rule
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
     # - if: $RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_SINGLE == "1"
     #   when: always
     - when: never
@@ -2503,7 +2608,8 @@ perftest_single-AWS-H100-EFA:
   extends:
     - .aws
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_AWS == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
@@ -2613,7 +2719,8 @@ perftest-single-pre-nyx:
   extends:
     - .pre-nyx
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
@@ -2645,7 +2752,8 @@ perftest-single-pre-tyche:
   extends:
     - .pre-tyche
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
@@ -2659,6 +2767,7 @@ perftest-single-pre-tyche:
     SYMMETRIC: 1
     CE_COLL: 1
     RMA: 1
+    TMA: 1
     ENABLE_MNNVL_TUNER_PLUGIN: 1
     SKIP_MULTI_RANK_GPU: "0"
   script:
@@ -2678,7 +2787,8 @@ perftest-single-ipp6-a40:
   extends:
     - .ipp6-a40
   rules:
-    # - <<: *pre_submit_rule
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
     # - if: $RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
     #   when: always
     - when: never
@@ -2710,7 +2820,8 @@ perftest-single-ipp6-a100:
   extends:
     - .ipp6-a100
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
@@ -2742,7 +2853,8 @@ perftest-single-dgxspark:
   extends:
     - .dgxspark
   rules:
-    # - <<: *pre_submit_rule
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
     # - if: $RUN_ON_DGXSPARK == "1" && $RUN_PERF_TESTS_SINGLE == "1"
     #   when: always
     - when: never
@@ -2774,7 +2886,8 @@ perftest-single-theia:
   extends:
     - .theia
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
@@ -2804,7 +2917,8 @@ perftest-single-bia:
   extends:
     - .bia
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_BIA == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
@@ -2833,7 +2947,8 @@ perftest-single-polyphe:
   extends:
     - .polyphe
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_POLYPHE == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
   needs: ["setup-polyphe"]
@@ -2891,7 +3006,8 @@ perftest-multi-eos:
   extends:
     - .eos
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_EOS == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
@@ -2926,7 +3042,8 @@ perftest-multi-cw-dfw:
   extends:
     - .cw-dfw
   rules:
-    # - <<: *pre_submit_rule
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
     # - if: $RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
     #   when: always
     - when: never
@@ -2961,7 +3078,8 @@ perftest_multi-AWS-H100-EFA:
   extends:
     - .aws
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_AWS == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
@@ -3073,7 +3191,8 @@ perftest-multi-pre-nyx:
   extends:
     - .pre-nyx
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
@@ -3114,7 +3233,8 @@ perftest-multi-pre-tyche:
   extends:
     - .pre-tyche
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
@@ -3149,7 +3269,8 @@ perftest-multi-ipp6-a40:
   extends:
     - .ipp6-a40
   rules:
-    # - <<: *pre_submit_rule
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
     # - if: $RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
     #   when: always
     - when: never
@@ -3181,7 +3302,8 @@ perftest-multi-ipp6-a100:
   extends:
     - .ipp6-a100
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
@@ -3213,7 +3335,8 @@ perftest-multi-theia:
   extends:
     - .theia
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
@@ -3244,7 +3367,9 @@ perftest-multi-theia:
 perftest-multi-theia-cross-clique-2n:
   stage: perf_tests_multi
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+    - if: $RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs: ["setup-theia"]
@@ -3286,7 +3411,9 @@ perftest-multi-theia-cross-clique-2n:
 perftest-multi-theia-cross-clique-4n:
   stage: perf_tests_multi
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+    - if: $RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs: ["setup-theia"]
@@ -3329,7 +3456,9 @@ perftest-multi-theia-cross-clique-4n:
 perftest-multi-theia-multi-nvld-4n:
   stage: perf_tests_multi
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+    - if: $RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs: ["setup-theia"]
@@ -3374,7 +3503,8 @@ perftest-multi-bia:
   extends:
     - .bia
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_BIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
@@ -3412,7 +3542,8 @@ perftest-multi-polyphe:
   extends:
     - .polyphe
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_POLYPHE == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
   needs: ["setup-polyphe"]
@@ -3447,7 +3578,8 @@ perftest-polyphe-nvl576-cross-clique-16n:
   extends:
     - .polyphe
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - <<: *nightly_rule
     - <<: *weekly_rule
     - if: $RUN_POLYPHE_NVL576_CI == "1"
@@ -3485,7 +3617,8 @@ perftest-polyphe-nvl576-multi-nvld-emulated-16n:
   extends:
     - .polyphe
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - <<: *nightly_rule
     - <<: *weekly_rule
     - if: $RUN_POLYPHE_NVL576_CI == "1"
@@ -3666,7 +3799,8 @@ perf-regression-cw-dfw:
   extends:
     - .cw-dfw
   rules:
-    # - <<: *pre_submit_rule
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
     # - if: $RUN_ON_CW_DFW == "1" && $RUN_PERF_REGRESSION == "1"
     #   when: always
     - when: never
@@ -3691,7 +3825,8 @@ perf-regression-pre-tyche:
   extends:
     - .pre-tyche
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_REGRESSION == "1"
       when: always
     - when: never
@@ -3715,7 +3850,8 @@ perf-regression-theia:
   extends:
     - .theia
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_THEIA == "1" && $RUN_PERF_REGRESSION == "1"
       when: always
     - when: never
@@ -3739,7 +3875,8 @@ perf-regression-bia:
   extends:
     - .bia
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_BIA == "1" && $RUN_PERF_REGRESSION == "1"
       when: always
     - when: never
@@ -3767,7 +3904,8 @@ perf-regression-polyphe:
     - .polyphe
   rules:
     - when: never
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_POLYPHE == "1" && $RUN_PERF_REGRESSION == "1"
       when: always
   needs: ["setup-polyphe"]
@@ -4167,7 +4305,8 @@ profiler-tests-ipp6-a100:
   extends:
     - .ipp6-a100
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_IPP6 == "1" && $RUN_PROFILER_TESTS == "1"
       when: always
     - when: never
@@ -4205,7 +4344,8 @@ inspector-tests-ipp6-a100:
   extends:
     - .ipp6-a100
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
     - if: $RUN_ON_IPP6 == "1" && $RUN_INSPECTOR_TESTS == "1"
       when: always
     - when: never
@@ -4237,7 +4377,9 @@ inspector-tests-ipp6-a100:
 resiliency-tests-bia:
   stage: resiliency_tests
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_RESILIENCY_TESTS == "1")
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+    - if: $RUN_ON_BIA == "1" && $RUN_RESILIENCY_TESTS == "1"
       when: always
     - when: never
   needs: ["setup-bia"]
@@ -4270,7 +4412,13 @@ resiliency-tests-bia:
 resiliency-tests-pre-tyche:
   stage: resiliency_tests
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_RESILIENCY_TESTS == "1")
+    - <<: *post_submit_rule
+      when: manual
+      allow_failure: true
+    - <<: *pre_submit_core_rule
+      when: manual
+      allow_failure: true
+    - if: $RUN_ON_PRE_TYCHE == "1" && $RUN_RESILIENCY_TESTS == "1"
       when: manual
       allow_failure: true
   needs: ["setup-pre-tyche"]
@@ -4325,9 +4473,14 @@ cleanup-eos:
   extends:
     - .cleanup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+      when: on_success
+    - <<: *pre_submit_nccl_ep_rule
       when: on_success
     - if: $RUN_ON_EOS == "1"
+      when: on_success
+    - if: $RUN_NCCL_EP_CI == "1"
       when: on_success
     - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
       when: on_success
@@ -4365,7 +4518,8 @@ cleanup-cw-dfw:
   extends:
     - .cleanup
   rules:
-    # - <<: *pre_submit_rule
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
     #   when: on_success
     # - if: $RUN_ON_CW_DFW == "1"
     #   when: on_success
@@ -4430,9 +4584,14 @@ cleanup-pre-nyx:
   extends:
     - .cleanup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+      when: on_success
+    - <<: *pre_submit_nccl_ep_rule
       when: on_success
     - if: $RUN_ON_PRE_NYX == "1"
+      when: on_success
+    - if: $RUN_NCCL_EP_CI == "1"
       when: on_success
   tags:
     - prenyx
@@ -4457,7 +4616,8 @@ cleanup-pre-tyche:
   extends:
     - .cleanup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
       when: on_success
     - if: $RUN_ON_PRE_TYCHE == "1"
       when: on_success
@@ -4499,7 +4659,8 @@ cleanup-theia:
   extends:
     - .cleanup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
       when: on_success
     - if: $RUN_ON_THEIA == "1"
       when: on_success
@@ -4548,7 +4709,8 @@ cleanup-bia:
   extends:
     - .cleanup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
       when: on_success
     - if: $RUN_ON_BIA == "1"
       when: on_success
@@ -4585,7 +4747,8 @@ cleanup-polyphe:
   extends:
     - .cleanup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
       when: on_success
     - if: $RUN_ON_POLYPHE == "1"
       when: on_success
@@ -4632,9 +4795,18 @@ cleanup-ipp6:
   extends:
     - .cleanup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+      when: on_success
+    - <<: *pre_submit_nccl_ep_rule
+      when: on_success
+    - <<: *pre_submit_nccl4py_rule
       when: on_success
     - if: $RUN_ON_IPP6 == "1"
+      when: on_success
+    - if: $RUN_NCCL_EP_CI == "1"
+      when: on_success
+    - if: $RUN_NCCL4PY_CI == "1"
       when: on_success
   tags:
     - ipp6-nccl
@@ -4674,7 +4846,8 @@ cleanup-dgxspark:
   extends:
     - .cleanup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
       when: on_success
     - if: $RUN_ON_DGXSPARK == "1"
       when: on_success
@@ -4696,7 +4869,8 @@ cleanup-AWS-H100-EFA:
   extends:
     - .cleanup
   rules:
-    - <<: *pre_submit_rule
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
       when: on_success
     - if: $RUN_ON_AWS == "1"
       when: on_success

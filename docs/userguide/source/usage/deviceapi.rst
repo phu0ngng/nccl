@@ -10,11 +10,11 @@ Device API
 
 Device API consists of the following modules:
 
- * **:ref:`LSA <device_api_lsa>` (Load/Store Accessible)** -- for communication between devices accessible via memory load/store operations,
+ * **LSA (Load/Store Accessible)** -- for communication between devices accessible via memory load/store operations,
    using CUDA P2P. This includes devices connected over NVLink and some devices connected over PCIe, so long as they
    have P2P connectivity with each other (as indicated by ``nvidia-smi topo -p2p p``). Up to NCCL 2.28.3, the
    availability of LSA was also subject to the :ref:`env_NCCL_P2P_LEVEL` distance check, but that is no longer the case
-   with newer versions.
+   with newer versions. See :ref:`LSA <device_api_lsa>`.
  * **Multimem** -- for communication between devices using the hardware multicast feature provided by
    NVLink SHARP (available on some datacenter GPUs since the Hopper generation).
  * **GIN (GPU-Initiated Networking)** -- for communication over the network (since NCCL 2.28.7).
@@ -281,28 +281,29 @@ GIN Device Kernel
 -----------------
 
 .. code-block:: C
-  :emphasize-lines: 4-6,12-34
+  :emphasize-lines: 4-8,12-38
 
   int main() {
     [...]
     reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     int nCTAs = 1;
-    reqs.railGinBarrierCount = nCTAs;
+    reqs.worldGinBarrierCount = nCTAs;
     reqs.ginSignalCount = 1;
+    reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL
     NCCLCHECK(ncclDevCommCreate(comm, &reqs, &devComm));
     [...]
   }
 
   template <typename T>
   __global__ void ginAlltoAllKernel(ncclDevComm devComm, ncclWindow_t win,
-                                    size_t inputOffset, size_t outputOffset, size_t count) {
+                                    size_t inputOffset, size_t outputOffset,
+                                    size_t count) {
     int ginContext = 0;
     ncclGinSignal_t signalIndex = 0;
     ncclGin gin { devComm, ginContext };
     uint64_t signalValue = gin.readSignal(signalIndex);
-
-    ncclGinBarrierSession<ncclCoopCta> bar { ncclCoopCta(), gin, ncclTeamWorld(devComm),
-                                             devComm.railGinBarrier, blockIdx.x };
+    ncclGinBarrierSession<ncclCoopCta> bar { ncclCoopCta(), gin,
+        ncclTeamTagWorld(), blockIdx.x };
     bar.sync(ncclCoopCta(), cuda::memory_order_acquire, ncclGinFenceLevel::Relaxed);
 
     const int rank = devComm.rank, nRanks = devComm.nRanks;
@@ -317,13 +318,17 @@ GIN Device Kernel
 
     gin.waitSignal(ncclCoopCta(), signalIndex, signalValue + nRanks);
     gin.flush(ncclCoopCta());
+
+    bar.sync(ncclCoopCta(), cuda::memory_order_release, ncclGinFenceLevel::Relaxed);
   }
 
 The above code excerpt demonstrates modifications needed to the earlier host code to enable GIN support, available since
 NCCL 2.28.7 (the lines with critical changes are highlighted), and also includes a GIN AlltoAll kernel. On the host
 side, compared to the LSA kernels, we request a launch on just a single CTA (because our kernel doesn't have much to do)
-and we set :c:macro:`railGinBarrierCount` and :c:macro:`ginSignalCount` to request GIN-specific barriers and signals
-(:c:func:`ncclDevCommCreate` will fail if GIN support is unavailable). As with LSA barriers, we need as many of them as
+and we set :c:macro:`worldGinBarrierCount` and :c:macro:`ginSignalCount` to request GIN-specific barriers and signals
+(:c:func:`ncclDevCommCreate` will fail if GIN support is unavailable). We also set ``ginConnectionType`` in the
+requirements to :c:macro:`NCCL_GIN_CONNECTION_FULL` so GIN is established with full connectivity between ranks (see
+:c:type:`ncclGinConnectionType_t`). As with LSA barriers, we need as many of them as
 CTAs, but signals (used for completion notifications) can be shared between CTAs so, for this simple example, we'll use
 just one per rank (for performance-oriented kernels, keeping signals exclusive to each CTA can improve performance).
 
@@ -346,8 +351,13 @@ transfer size. It also accepts several optional arguments; the above example tak
 requesting that the destination peer increments the value of its local signal once the payload has been settled.
 
 Once the local signal has been incremented by *nRanks*, we know that every peer has deposited their data in this rank's
-output buffer and thus that the buffer is ready; :c:func:`waitSignal` can be used to block until that happens. Before
-terminating, the kernel still needs to :c:func:`flush` all the previously initiated outgoing :c:func:`put` operations --
-while that does not guarantee remote completion, it does ensure that the local input buffer is safe to reuse. We can
-skip an explicit barrier at the end, since :c:func:`waitSignal` and :c:func:`flush` together ensure that nobody else is
-using this rank's buffers.
+output buffer and thus that the buffer is ready; :c:func:`waitSignal` can be used to block until that happens.
+
+A single ``signalIndex`` is enough and works correctly here because the kernel uses only one CTA. With more CTAs you
+need more signals (for example one per CTA in the device communicator requirements and in the kernel) and more
+complicated device-side logic to decide which :c:func:`waitSignal` calls to make.
+
+Before terminating, the kernel still needs to :c:func:`flush` all the previously initiated outgoing :c:func:`put` operations --
+while that does not guarantee remote completion, it does ensure that the local input buffer is safe to reuse. The final release ``bar.sync`` is included for symmetry with the acquire at the start of the kernel (the same paired pattern
+as in the LSA examples above), not because this minimal AlltoAll strictly requires it after :c:func:`waitSignal` and
+:c:func:`flush`.
