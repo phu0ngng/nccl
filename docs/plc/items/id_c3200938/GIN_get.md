@@ -99,8 +99,8 @@ The most similar API is `put`. Here are the differences:
 void put(
     ncclTeam,
     int peer,
-    ncclWindow_t dstWnd, // get: renamed to remoteWnd for clarity 
-    size_t dstOffset, 
+    ncclWindow_t dstWnd, // get: renamed to remoteWnd for clarity
+    size_t dstOffset,
     ncclWindow_t srcWnd, // get: renamed to localWnd for clarity
     size_t srcOffset,
     size_t bytes,
@@ -151,7 +151,7 @@ typedef struct {
 } ncclGin_v13_t; // New version.
 ```
 
-`iflush` is similar to the NET definition of `iflush`. For comparison, here is the NET definition of `iflush`: 
+`iflush` is similar to the NET definition of `iflush`. For comparison, here is the NET definition of `iflush`:
 
 ```c
 ncclResult_t (*iflush)(void* recvComm, int n, void** data, int* sizes, void** mhandles, void** request);
@@ -168,7 +168,7 @@ OPEN: Why does NET give the specific mhandles, when 1 read to any memory is suff
 
 ```c
 struct ncclGinApi_Get<NCCL_NET_DEVICE_GIN_GDAKI> {
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, int peer, ncclGinWindow_t remoteWin, size_t remoteOff, 
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, int peer, ncclGinWindow_t remoteWin, size_t remoteOff,
                                       ncclGinWindow_t localWin, size_t localOff, size_t bytes, uint32_t optFlags) {
       doca_gpu_dev_verbs_addr raddr; // properly initialized raddr
       doca_gpu_dev_verbs_addr laddr; // properly initialized laddr
@@ -233,7 +233,7 @@ typedef union {
   } __attribute__((packed)) header;
   struct {
     uint8_t flag : 1;
-    uint8_t resv : 7; 
+    uint8_t resv : 7;
     uint16_t opHigh; // extend op by 16 bits.
     uint8_t resv2;
     uint32_t resv3;
@@ -242,7 +242,7 @@ typedef union {
 }
 ```
 
-This is a backwards compatible change as long as we process old ops (and exit) before processing new ops.  
+This is a backwards compatible change as long as we process old ops (and exit) before processing new ops.
 
 **iget and iflush**
 
@@ -253,7 +253,7 @@ This is a backwards compatible change as long as we process old ops (and exit) b
 ```c
 ncclResult_t ncclGinIbProxyTest(void *collComm, void *request, int *done) {
   // ... code omitted
-  
+
   // pseudocode
   struct ibv_cq* cq = cComm->fullSendComm[rank]->base->cq; // existing logic uses sendComm cq
   if (req->type == NCCL_NET_IB_REQ_FLUSH) { // NEW. If flush, use recvComm cq
@@ -261,7 +261,7 @@ ncclResult_t ncclGinIbProxyTest(void *collComm, void *request, int *done) {
   }
   NCCLCHECK(wrap_ibv_poll_cq(cq, 4, wc, &wrDone));
 
-  // ... code omitted 
+  // ... code omitted
 }
 ```
 
@@ -288,7 +288,7 @@ The new `gin.get` looks something like:
 
 ```c
 struct ncclGinApi_Get<NCCL_NET_DEVICE_GIN_GDAKI> {
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, int peer, ncclGinWindow_t remoteWin, size_t remoteOff, 
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, int peer, ncclGinWindow_t remoteWin, size_t remoteOff,
                                       ncclGinWindow_t localWin, size_t localOff, size_t bytes, ncclGinRequest_t* outRequest, uint32_t optFlags) {
       if (optFlags & ncclGinOptFlagsNoCST) {
         doca_gpu_dev_verbs_get<DOCA_GPUNETIO_VERBS_MCST_DISABLED>(...);
@@ -307,7 +307,7 @@ struct ncclGinApi_Get<NCCL_NET_DEVICE_GIN_GDAKI> {
 ```c
 struct ncclGinApi_Flush<NCCL_NET_DEVICE_GIN_GDAKI> {
   template <typename Coop>
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, cuda::memory_order ord, uint32_t* abortFlag, 
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, cuda::memory_order ord, uint32_t* abortFlag,
                   uint32_t optFlags = ncclGinOptFlagsDefault) { // New arg
     if (!(optFlags & ncclGinOptFlagsNoCST)) { // new condition to support optimization
       // new logic to support get
@@ -318,7 +318,7 @@ struct ncclGinApi_Flush<NCCL_NET_DEVICE_GIN_GDAKI> {
     // Existing logic. Ensure all wqe are complete.
     // ... code omitted ...
   }
-}              
+}
 ```
 
 **ctx.getCalledSinceLastFlush**
@@ -330,7 +330,7 @@ We maintain a per-context atomic bool called `getCalledSinceLastFlush`. This val
 ### Other designs considered
 
 We considered the following other designs:
-1) get returns a ncclGinRequest_t. This is of limited use for the customer's batched get use case; the user would need to check the completion of every get 
+1) get returns a ncclGinRequest_t. This is of limited use for the customer's batched get use case; the user would need to check the completion of every get
 2) batched get API where the user can sumbit multiple requests at once. This adds API bloat and is of minimal use; the only optimization we would do is delay ringing the doorbell, which the user can do themselves
 3) get+counter. Since counters do not imply completion of all previous operations, we would need to do get+counter for every single get in the batch. This has high overhead.
 
@@ -415,7 +415,7 @@ Tests pass
 
 ### Performance
 
-New `alltoall` perftest implementation that uses gin.get instead of gin.put 
+New `alltoall` perftest implementation that uses gin.get instead of gin.put
 
 #### What is measured?
 
