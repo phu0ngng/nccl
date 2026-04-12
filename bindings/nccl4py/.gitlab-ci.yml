@@ -1,4 +1,5 @@
 stages:
+  - public-api-update-check
   - build
   - unit-tests
   - setup
@@ -62,6 +63,45 @@ default:
 ##
 ## Stage: build - Start...
 ##
+
+nccl4py-api-check:
+  stage: public-api-update-check
+  needs: []
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+      changes:
+        paths:
+          - src/nccl.h.in
+          - src/include/nccl_common.h
+          - src/include/nccl_device.h
+          - "src/include/nccl_device/*.h"
+          - "src/include/nccl_device/impl/*.h"
+      when: always
+    - when: never
+  tags:
+    - ipp6-nccl
+  variables:
+    GIT_DEPTH: 0
+    NCCL4PY_REVIEWERS: "@xiakunl @subhadeepb @apervaiz"
+  allow_failure: true
+  script:
+    - ./bindings/nccl4py/ci/nccl4py-api-check.sh
+
+nccl4py-api-check-test:
+  stage: public-api-update-check
+  needs: []
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+      changes:
+        paths:
+          - bindings/nccl4py/ci/nccl4py-api-check.sh
+          - bindings/nccl4py/ci/test_nccl4py-api-check.sh
+      when: always
+    - when: never
+  tags:
+    - ipp6-nccl
+  script:
+    - ./bindings/nccl4py/ci/test_nccl4py-api-check.sh
 
 # Building wheels is done on IPP6 since docker must be available
 build_wheels:
