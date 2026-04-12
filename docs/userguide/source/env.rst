@@ -870,7 +870,7 @@ The default is 0, set to 1 to disable checks.
 
 NCCL_CHECK_POINTERS
 -------------------
-(since 2.2.12, deprecated in 2.29.4)
+(since 2.2.12, deprecated in 2.29.7)
 
 The ``NCCL_CHECK_POINTERS`` variable enables checking of the CUDA memory pointers on each collective call.
 Checks are useful during development but can increase the latency.
@@ -884,7 +884,7 @@ Setting to 1 restores the original behavior of NCCL prior to 2.2.12.
 
 NCCL_CHECK_MODE
 ---------------
-(since 2.29.4)
+(since 2.29.7)
 
 The ``NCCL_CHECK_MODE`` variable controls the mode of checking the input arguments.
 
