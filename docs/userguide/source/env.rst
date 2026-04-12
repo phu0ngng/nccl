@@ -683,8 +683,33 @@ This is intended to be used when device sharing happens with ``AUTO`` and impact
 
 If set to ``ALL``, NCCL will use all the available network devices for each GPU, disregarding other GPUs.
 
+NCCL_MULTI_RANK_GPU_ENABLE
+--------------------------
+(since 2.30)
 
+By default, communicator initialization will fail if it detects that a GPU is being used by
+more than one rank. The ``NCCL_MULTI_RANK_GPU_ENABLE`` variable permits this configuration. This can be
+useful when using GPU partitioning technologies (such as CUDA Green Contexts) that allow
+multiple processes or threads to operate on the same physical GPU.
 
+Setting this variable does not in itself assign multiple ranks to a GPU. The application must
+still arrange for ranks to share a device. This parameter only permits NCCL to proceed when
+it detects that there are multiple ranks on a CUDA device.
+
+NVLS is currently not compatible with multiple ranks using the same GPU. If
+``NCCL_NVLS_ENABLE`` is set to 1, communicator initialization will fail when multiple ranks
+per GPU are detected. If ``NCCL_NVLS_ENABLE`` is set to 2 (the default), NVLS will be silently disabled.
+
+Each rank sharing a GPU allocates its own set of channels and associated resources. When many
+ranks share a device, the total number of channels across all ranks can exceed the GPU's
+available SMs and other scheduling resources. Use ``NCCL_MAX_CTAS`` to limit the number of
+channels per rank to avoid resource exhaustion.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 (default): Multiple ranks per GPU is not allowed. Communicator initialization will fail if detected.
+
+1: Allow multiple ranks to use the same GPU device.
 
 NCCL_TOPO_FILE
 --------------
