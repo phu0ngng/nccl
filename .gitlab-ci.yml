@@ -77,6 +77,8 @@ variables:
   # Toggle variables for downstream pipelines
   RUN_NCCL_EP_CI: "0"
   RUN_NCCL4PY_CI: "0"
+  RUN_DDP_TEST: "0"
+  RUN_REDUCE_COPY_SWEEP: "0"
   # By default skip certain tests
   SKIP_MULTI_RANK_GPU: "1"
 
@@ -248,6 +250,10 @@ build-ipp6:
   extends:
     - .ipp6
   rules:
+    - <<: *weekly_rule
+      variables:
+        NCCL_TEST_REDUCE_COPY_TYPES: "all"
+        BUILD_SLURM_TIME: "01:00:00"
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
     - <<: *pre_submit_nccl_ep_rule
@@ -257,10 +263,6 @@ build-ipp6:
     - if: $RUN_ON_DRACO_OCI == "1" || $RUN_ON_EOS == "1" || $RUN_ON_CW_DFW == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_AWS == "1"
       when: always
     - if: $RUN_ON_P100 == "1" || $RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1"
-      when: always
-    - if: $RUN_NCCL_EP_CI == "1"
-      when: always
-    - if: $RUN_NCCL4PY_CI == "1"
       when: always
     - when: never
   script:
@@ -323,6 +325,10 @@ build-pre-tyche:
   extends:
     - .pre-tyche
   rules:
+    - if: $TRIGGER_PIPELINE =~ /^(weekly)$/
+      when: always
+      variables:
+        NCCL_TEST_REDUCE_COPY_TYPES: "all"
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
     - if: $RUN_ON_PRE_TYCHE == "1"
@@ -343,6 +349,9 @@ build-theia:
   extends:
     - .theia
   rules:
+    - <<: *weekly_rule
+      variables:
+        NCCL_TEST_REDUCE_COPY_TYPES: "all"
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
     - if: $RUN_ON_THEIA == "1"
@@ -363,6 +372,9 @@ build-bia:
   extends:
     - .bia
   rules:
+    - <<: *weekly_rule
+      variables:
+        NCCL_TEST_REDUCE_COPY_TYPES: "all"
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
     - if: $RUN_ON_BIA == "1"
@@ -383,6 +395,9 @@ build-polyphe:
   extends:
     - .polyphe
   rules:
+    - <<: *weekly_rule
+      variables:
+        NCCL_TEST_REDUCE_COPY_TYPES: "all"
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
     - if: $RUN_ON_POLYPHE == "1"
@@ -510,8 +525,6 @@ setup-pre-nyx:
     - <<: *pre_submit_core_rule
     - <<: *pre_submit_nccl_ep_rule
     - if: $RUN_ON_PRE_NYX == "1"
-      when: always
-    - if: $RUN_NCCL_EP_CI == "1"
       when: always
     - when: never
   needs: ["build-ipp6"]
@@ -2398,6 +2411,96 @@ apitest-polyphe:
     reports:
       junit: junit_results.xml
     expire_in: 48 hrs
+
+reduce-copy-sweep-pre-tyche:
+  stage: api_tests
+  extends:
+    - .pre-tyche
+  rules:
+    - <<: *weekly_rule
+    - if: $RUN_REDUCE_COPY_SWEEP == "1"
+      when: always
+    - when: never
+  needs: ["setup-pre-tyche"]
+  variables:
+    SLURM_TIME: 240
+    NNODES: 1
+    NP: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:reduce-copy-sweep::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-reduce-copy.sh
+
+reduce-copy-sweep-pre-nyx:
+  stage: api_tests
+  extends:
+    - .pre-nyx
+  rules:
+    - <<: *weekly_rule
+    - if: $RUN_REDUCE_COPY_SWEEP == "1"
+      when: always
+    - when: never
+  needs: ["setup-pre-nyx"]
+  variables:
+    SLURM_TIME: 240
+    NNODES: 1
+    NP: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:reduce-copy-sweep::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-reduce-copy.sh
+
+reduce-copy-sweep-theia:
+  stage: api_tests
+  extends:
+    - .theia
+  rules:
+    - <<: *weekly_rule
+    - if: $RUN_REDUCE_COPY_SWEEP == "1"
+      when: always
+    - when: never
+  needs: ["setup-theia"]
+  variables:
+    SLURM_TIME: 240
+    NNODES: 1
+    NP: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:reduce-copy-sweep::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-reduce-copy.sh
+
+reduce-copy-sweep-bia:
+  stage: api_tests
+  extends:
+    - .bia
+  rules:
+    - <<: *weekly_rule
+    - if: $RUN_REDUCE_COPY_SWEEP == "1"
+      when: always
+    - when: never
+  needs: ["setup-bia"]
+  variables:
+    SLURM_TIME: 240
+    NNODES: 1
+    NP: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:reduce-copy-sweep::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-reduce-copy.sh
+
+reduce-copy-sweep-polyphe:
+  stage: api_tests
+  extends:
+    - .polyphe
+  rules:
+    - <<: *weekly_rule
+    - if: $RUN_REDUCE_COPY_SWEEP == "1"
+      when: always
+    - when: never
+  needs: ["setup-polyphe"]
+  variables:
+    SLURM_TIME: 240
+    NNODES: 1
+    NP: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:reduce-copy-sweep::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-reduce-copy.sh
 
 ##
 ## Stage: api_tests - Finish!
@@ -4608,6 +4711,8 @@ cleanup-pre-nyx:
       optional: true
     - job: perftest-multi-pre-nyx
       optional: true
+    - job: reduce-copy-sweep-pre-nyx
+      optional: true
   variables:
     INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
 
@@ -4650,6 +4755,8 @@ cleanup-pre-tyche:
     - job: cs-ptyche-intra-full
       optional: true
     - job: cs-ptyche-inter-full
+      optional: true
+    - job: reduce-copy-sweep-pre-tyche
       optional: true
   variables:
     INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
@@ -4702,6 +4809,8 @@ cleanup-theia:
       optional: true
     - job: cs-theia-inter-full
       optional: true
+    - job: reduce-copy-sweep-theia
+      optional: true
   variables:
     INSTALL_DIR: "${THEIA_INSTALL_DIR}"
 
@@ -4739,6 +4848,8 @@ cleanup-bia:
     - job: cs-bia-inter-full
       optional: true
     - job: perf-regression-bia
+      optional: true
+    - job: reduce-copy-sweep-bia
       optional: true
   variables:
     INSTALL_DIR: "${BIA_INSTALL_DIR}"
@@ -4788,6 +4899,8 @@ cleanup-polyphe:
     #   optional: true
     # - job: perf-regression-polyphe
     #   optional: true
+    - job: reduce-copy-sweep-polyphe
+      optional: true
   variables:
     INSTALL_DIR: "${POLYPHE_INSTALL_DIR}"
 

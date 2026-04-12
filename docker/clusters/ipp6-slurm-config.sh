@@ -66,7 +66,7 @@ function get_build_command() {
     echo "srun \
         -p cpuonly \
         -J nccl:build \
-        -t 00:30:00 \
+        -t ${BUILD_SLURM_TIME:-00:30:00} \
         -n 1 \
         --exclusive \
         --container-image=$build_tools_image \
