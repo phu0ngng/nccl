@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <mutex>
 
 #define __hidden __attribute__((visibility("hidden")))
 
@@ -33,10 +34,12 @@ static struct pluginContext {
     { 0UL, MAX_DEVICE_COUNT },
 };
 
+
 __hidden int netContextCounter;
 __hidden int tunerContextCounter;
 __hidden int profilerContextCounter;
 __hidden int virtualDeviceCount;
+__hidden char names[MAX_DEVICE_COUNT + 1][64]; // +1 for the fused dev
 
 struct netPluginListenComm {
   int dev;
@@ -75,7 +78,12 @@ __hidden ncclResult_t netPluginInit(void** ctx, uint64_t commId, ncclNetCommConf
 
 __hidden ncclResult_t netPluginDevices(int* ndev) { *ndev = context[0].devices + virtualDeviceCount; return ncclSuccess; }
 __hidden ncclResult_t netPluginGetProperties(int dev, ncclNetProperties_t* props) {
-  props->name = (char *)"ncclNetPlugin_v12";
+  static std::once_flag once;
+  std::call_once(once, []() {
+    for (int i = 0; i < MAX_DEVICE_COUNT; i++)
+      snprintf(names[i], sizeof(names[i]), "ncclNetPlugin_v12_%d", i);
+  });
+  props->name = names[dev];
   props->pciPath = NULL;
   props->guid = 0;
   props->ptrSupport = NCCL_PTR_HOST;
@@ -88,8 +96,15 @@ __hidden ncclResult_t netPluginGetProperties(int dev, ncclNetProperties_t* props
   props->maxRecvs = NCCL_PLUGIN_MAX_RECVS;
   props->netDeviceType = NCCL_NET_DEVICE_HOST;
   props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
-  props->vProps.ndevs = 1;
-  props->vProps.devs[0] = MAX_DEVICE_COUNT;
+  if (dev < MAX_DEVICE_COUNT) { /* physical device*/
+    props->vProps.ndevs = 1;
+    props->vProps.devs[0] = dev;
+  } else { /* virtual dev*/
+    if (dev >= (MAX_DEVICE_COUNT + 1)) return ncclInvalidArgument;
+    props->vProps.ndevs = 2;
+    props->vProps.devs[0] = 0;
+    props->vProps.devs[1] = 0;
+  }
   props->maxP2pBytes = NCCL_MAX_NET_SIZE_BYTES;
   props->maxCollBytes = NCCL_MAX_NET_SIZE_BYTES;
   // Set to NCCL_NET_ID_UNDEF will lead NCCL to ignore the value
