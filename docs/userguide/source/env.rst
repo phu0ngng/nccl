@@ -685,7 +685,7 @@ If set to ``ALL``, NCCL will use all the available network devices for each GPU,
 
 NCCL_MULTI_RANK_GPU_ENABLE
 --------------------------
-(since 2.30)
+(since 2.30) (experimental)
 
 By default, communicator initialization will fail if it detects that a GPU is being used by
 more than one rank. The ``NCCL_MULTI_RANK_GPU_ENABLE`` variable permits this configuration. This can be
@@ -704,6 +704,11 @@ Each rank sharing a GPU allocates its own set of channels and associated resourc
 ranks share a device, the total number of channels across all ranks can exceed the GPU's
 available SMs and other scheduling resources. Use ``NCCL_MAX_CTAS`` to limit the number of
 channels per rank to avoid resource exhaustion.
+
+Note: This is currently an experimental feature, and is still being tuned. It is not compatible
+with all configurations. It may exhaust resources and lock NCCL. It does not work with NVLS and
+does not yet have optimized collective routines. If erroring or hanging, NCCL may benefit from
+lower limits on NCCL_MAX_CTAS, NCCL_CUMEM_ENABLE=0, and NCCL_NET_GDR_LEVEL=LOC.
 
 Values accepted
 ^^^^^^^^^^^^^^^
