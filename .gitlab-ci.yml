@@ -4575,6 +4575,8 @@ cleanup-eos:
       optional: true
     - job: setup-eos
       optional: true
+    - job: nccl_ep_ci
+      optional: true
     - job: unit-tests-eos
       optional: true
     - job: apitest-eos
@@ -4681,6 +4683,8 @@ cleanup-pre-nyx:
     - prenyx
   needs:
     - job: setup-pre-nyx
+      optional: true
+    - job: nccl_ep_ci
       optional: true
     - job: unit-tests-pre-nyx
       optional: true
