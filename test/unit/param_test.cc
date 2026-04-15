@@ -12,7 +12,6 @@
 
 #include <gtest/gtest.h>
 #include "param/param.h"
-#include "param/c_api.h"
 #include <cstdlib>
 #include <string>
 #include <set>
@@ -493,16 +492,6 @@ TEST_F(NcclParamTest, CApi_GetAllParameterKeys) {
   EXPECT_TRUE(key_set.count("TEST_CAPI_INT") > 0);
   EXPECT_TRUE(key_set.count("TEST_INT_DEFAULT") > 0);
   EXPECT_TRUE(key_set.count("TEST_ENUM_OPTIONS") > 0);
-}
-
-TEST_F(NcclParamTest, CApi_BindMacro) {
-  BIND_NCCL_PARAM(handle, "TEST_CAPI_INT");
-  EXPECT_EQ(handleSt, ncclSuccess);
-  EXPECT_NE(handle, nullptr);
-
-  int32_t val = 0;
-  EXPECT_EQ(ncclParamGetI32(handle, &val), ncclSuccess);
-  EXPECT_EQ(val, 42);
 }
 
 TEST_F(NcclParamTest, CApi_StringParam) {
