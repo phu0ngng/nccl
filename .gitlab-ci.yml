@@ -252,7 +252,6 @@ build-ipp6:
   rules:
     - <<: *weekly_rule
       variables:
-        NCCL_TEST_REDUCE_COPY_TYPES: "all"
         BUILD_SLURM_TIME: "01:00:00"
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
@@ -2422,24 +2421,6 @@ reduce-copy-sweep-pre-tyche:
       when: always
     - when: never
   needs: ["setup-pre-tyche"]
-  variables:
-    SLURM_TIME: 240
-    NNODES: 1
-    NP: 1
-  script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:reduce-copy-sweep::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-reduce-copy.sh
-
-reduce-copy-sweep-pre-nyx:
-  stage: api_tests
-  extends:
-    - .pre-nyx
-  rules:
-    - <<: *weekly_rule
-    - if: $RUN_REDUCE_COPY_SWEEP == "1"
-      when: always
-    - when: never
-  needs: ["setup-pre-nyx"]
   variables:
     SLURM_TIME: 240
     NNODES: 1
