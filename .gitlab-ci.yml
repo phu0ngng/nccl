@@ -3426,7 +3426,7 @@ perftest-multi-theia:
     - when: never
   needs: ["setup-theia"]
   variables:
-    SLURM_TIME: 45
+    SLURM_TIME: 70
     MAX: "1G"
     NP: 4
     SYMMETRIC: 1

@@ -412,6 +412,43 @@ fi
 
 fi # SKIP_STANDARD_PERF
 
+if [ "${RUN_GDRCOPY_TESTS:-0}" == "1" ]; then
+  gdrcopy_funcs="all_reduce_perf alltoall_perf sendrecv_perf"
+  xc_pxn_wrapper="test/scripts/ci/cross-clique-wrapper.sh"
+
+  export NCCL_GDRCOPY_ENABLE=1
+
+  # FIFO-only
+  export NCCL_GDRCOPY_FIFO_ENABLE=1 NCCL_GDRCOPY_SYNC_ENABLE=0 NCCL_GDRCOPY_FLUSH_ENABLE=0
+  for func in $gdrcopy_funcs; do
+    run_command "${func}_gdrcopy_fifo" $RUN_MODE $NGPUS "" "" \
+      "$NCCL_HOME/test/perf/$func" "$range $opts -t 1 -g 1"
+  done
+
+  # SYNC-only
+  export NCCL_GDRCOPY_FIFO_ENABLE=0 NCCL_GDRCOPY_SYNC_ENABLE=1 NCCL_GDRCOPY_FLUSH_ENABLE=0
+  for func in $gdrcopy_funcs; do
+    run_command "${func}_gdrcopy_sync" $RUN_MODE $NGPUS "" "" \
+      "$NCCL_HOME/test/perf/$func" "$range $opts -t 1 -g 1"
+  done
+
+  # FLUSH-only
+  export NCCL_GDRCOPY_FIFO_ENABLE=0 NCCL_GDRCOPY_SYNC_ENABLE=0 NCCL_GDRCOPY_FLUSH_ENABLE=1
+  for func in $gdrcopy_funcs; do
+    run_command "${func}_gdrcopy_flush" $RUN_MODE $NGPUS "" "" \
+      "$NCCL_HOME/test/perf/$func" "$range $opts -t 1 -g 1"
+  done
+
+  # PXN: single NIC forces cross-GPU proxying and exercises the GDRCopy
+  # sameDevice guard. cross-clique-wrapper.sh (CLIQUE_SIZE=1) forces
+  # inter-node traffic onto IB on MNNVL clusters; no-op elsewhere.
+  export NCCL_GDRCOPY_FIFO_ENABLE=1 NCCL_GDRCOPY_SYNC_ENABLE=1 NCCL_GDRCOPY_FLUSH_ENABLE=0
+  for func in $gdrcopy_funcs; do
+    run_command "${func}_gdrcopy_pxn" $RUN_MODE 1 "" "CLIQUE_SIZE=1 NCCL_IB_HCA=mlx5_0" \
+      "$xc_pxn_wrapper $NCCL_HOME/test/perf/$func" "$range $opts -t 1 -g $NGPUS"
+  done
+fi
+
 # Native cross-clique P2P (real rack topology, NCCL_MNNVL_CLIQUE_ID=-2)
 if [ "$CROSS_CLIQUE_NATIVE" == "1" ]; then
   xc_env="NCCL_MNNVL_CLIQUE_ID=-2 NCCL_MNNVL_CROSS_CLIQUE=1 NCCL_NET_PLUGIN=none"
