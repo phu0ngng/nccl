@@ -13,3 +13,5 @@ Most of the tests inherit functionality of the `ncclDevApiCommon` class.  This c
 * destroys all devComms at the end of every test.
 
 There is also a `ncclMultiTeamCommon` class which provides the same functionality as `ncclDevApiCommon` and also artifically decreases the LSA team size to 2 so we can test multi-team logic on a single host. Prefer `ncclDevApiCommon` unless your test absolutely needs multiple teams.
+
+The **reduceCopy** subdirectory contains parameterized tests for the ReduceCopy device API. Those tests use their own fixture (`ReduceCopyTestBase`) and skip per test when device API is not supported (`TestSupportChecker::isDeviceApiSupported`). ReduceCopy test types and generation are controlled by `NCCL_TEST_REDUCE_COPY_TYPES` (see reduceCopy/generate_tests.py).

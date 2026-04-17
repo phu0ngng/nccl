@@ -683,8 +683,38 @@ This is intended to be used when device sharing happens with ``AUTO`` and impact
 
 If set to ``ALL``, NCCL will use all the available network devices for each GPU, disregarding other GPUs.
 
+NCCL_MULTI_RANK_GPU_ENABLE
+--------------------------
+(since 2.30) (experimental)
 
+By default, communicator initialization will fail if it detects that a GPU is being used by
+more than one rank. The ``NCCL_MULTI_RANK_GPU_ENABLE`` variable permits this configuration. This can be
+useful when using GPU partitioning technologies (such as CUDA Green Contexts) that allow
+multiple processes or threads to operate on the same physical GPU.
 
+Setting this variable does not in itself assign multiple ranks to a GPU. The application must
+still arrange for ranks to share a device. This parameter only permits NCCL to proceed when
+it detects that there are multiple ranks on a CUDA device.
+
+NVLS is currently not compatible with multiple ranks using the same GPU. If
+``NCCL_NVLS_ENABLE`` is set to 1, communicator initialization will fail when multiple ranks
+per GPU are detected. If ``NCCL_NVLS_ENABLE`` is set to 2 (the default), NVLS will be silently disabled.
+
+Each rank sharing a GPU allocates its own set of channels and associated resources. When many
+ranks share a device, the total number of channels across all ranks can exceed the GPU's
+available SMs and other scheduling resources. Use ``NCCL_MAX_CTAS`` to limit the number of
+channels per rank to avoid resource exhaustion.
+
+Note: This is currently an experimental feature, and is still being tuned. It is not compatible
+with all configurations. It may exhaust resources and lock NCCL. It does not work with NVLS and
+does not yet have optimized collective routines. If erroring or hanging, NCCL may benefit from
+lower limits on NCCL_MAX_CTAS, NCCL_CUMEM_ENABLE=0, and NCCL_NET_GDR_LEVEL=LOC.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 (default): Multiple ranks per GPU is not allowed. Communicator initialization will fail if detected.
+
+1: Allow multiple ranks to use the same GPU device.
 
 NCCL_TOPO_FILE
 --------------
@@ -870,7 +900,7 @@ The default is 0, set to 1 to disable checks.
 
 NCCL_CHECK_POINTERS
 -------------------
-(since 2.2.12, deprecated in 2.29.4)
+(since 2.2.12, deprecated in 2.29.7)
 
 The ``NCCL_CHECK_POINTERS`` variable enables checking of the CUDA memory pointers on each collective call.
 Checks are useful during development but can increase the latency.
@@ -884,7 +914,7 @@ Setting to 1 restores the original behavior of NCCL prior to 2.2.12.
 
 NCCL_CHECK_MODE
 ---------------
-(since 2.29.4)
+(since 2.29.7)
 
 The ``NCCL_CHECK_MODE`` variable controls the mode of checking the input arguments.
 

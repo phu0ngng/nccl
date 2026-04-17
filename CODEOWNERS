@@ -1,0 +1,21 @@
+# Defines code owners for paths within the NCCL repository
+# Reference: https://docs.gitlab.com/user/project/codeowners/reference/
+# "^" prefix on a section means approval from those owners is optional
+
+^[DevOps] @kartiki @jskrobola @chricao
+docker/
+.gitlab-ci.yml
+.gitlab-template.yml
+**/.gitlab-ci.yml
+test/scripts/ci/
+
+^[NCCL4py] @xiakunl @apervaiz
+bindings/nccl4py/
+src/nccl.h.in
+src/include/nccl_common.h
+src/include/nccl_device.h
+src/include/nccl_device/*.h
+src/include/nccl_device/impl/*.h
+
+^[NCCL-EP] @subhadeepb @artemp @kgioioso @lschneider
+contrib/nccl_ep/

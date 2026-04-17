@@ -105,7 +105,7 @@ ncclDevCommRequirements
       ``ginConnectionType`` to :c:macro:`NCCL_GIN_CONNECTION_FULL`. This field is deprecated in favor of explicitly
       setting :c:member:`ginConnectionType` to the desired value. When set to ``true``, it overrides the
       ``ginConnectionType`` field. New code should use :c:member:`ginConnectionType` directly instead of this field.
-      Available since NCCL 2.28.7, deprecated since NCCL 2.29.4.
+      Available since NCCL 2.28.7, deprecated since NCCL 2.29.7.
 
    .. c:member:: ncclGinConnectionType_t ginConnectionType
 
@@ -115,7 +115,7 @@ ncclDevCommRequirements
       GIN is initialized and each rank connects to other ranks in the same rail team. If GIN resources are requested via ``ginSignalCount``,
       ``ginCounterCount``, ``barrierCount``, or ``railGinBarrierCount`` while this field is set to
       :c:macro:`NCCL_GIN_CONNECTION_NONE`, device communicator creation will fail with :c:macro:`ncclInvalidArgument`.
-      Available since NCCL 2.29.4.
+      Available since NCCL 2.29.7.
 
       See :c:type:`ncclGinConnectionType_t` for possible values.
 
@@ -177,13 +177,13 @@ ncclCommProperties_t
 
    .. c:member:: int nLsaTeams
 
-      The number of :ref:`LSA <device_api_lsa>` teams across the entire communicator. Available since NCCL 2.29.4.
+      The number of :ref:`LSA <device_api_lsa>` teams across the entire communicator. Available since NCCL 2.29.7.
 
    .. c:member:: ncclGinType_t railedGinType
 
       The railed GIN type supported by the communicator. If equal to :c:macro:`NCCL_GIN_TYPE_NONE`, a
       :c:type:`ncclDevComm` cannot be created with GIN connection type :c:macro:`NCCL_GIN_CONNECTION_RAIL`.
-      Available since NCCL 2.29.4.
+      Available since NCCL 2.29.7.
 
 
 ncclGinType_t
@@ -212,7 +212,7 @@ ncclGinConnectionType_t
 
    Specifies the type of GIN connection for device communicators. This enum controls whether GIN (GPU-Initiated
    Networking) resources should be allocated and what connection type to use. Used in :c:type:`ncclDevCommRequirements`
-   when creating device communicators. Available since NCCL 2.29.4.
+   when creating device communicators. Available since NCCL 2.29.7.
 
    .. c:macro:: NCCL_GIN_CONNECTION_NONE
 
