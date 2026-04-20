@@ -61,9 +61,11 @@ void ncclDevComm_backwards_compat_test() {
   static_assert(offsetof(ncclWindow_vidmem, mcOffset4K) == 28);
   static_assert(offsetof(ncclWindow_vidmem, ginOffset4K) == 32);
   static_assert(offsetof(ncclWindow_vidmem, ginWins) == 40);
+  static_assert(offsetof(ncclWindow_vidmem, ginMultiSegmentWins) == 72);
+  static_assert(offsetof(ncclWindow_vidmem, numSegments) == 80);
 
   // This check prompts users to update the test. Edit according to the instructions above.
-  static_assert(sizeof(ncclWindow_vidmem) == 72);
+  static_assert(sizeof(ncclWindow_vidmem) == 88);
 
   static_assert(offsetof(ncclMultimemHandle_t, mcBasePtr) == 0);
 
@@ -80,6 +82,16 @@ void ncclDevComm_backwards_compat_test() {
 
   // This check prompts users to update the test. Edit according to the instructions above.
   static_assert(sizeof(ncclGinBarrierHandle_t) == 8);
+}
+
+// Testing the inlined window type that allows growing ncclWindow_t without breaking backwards compat.
+void ncclResourceWindow_vidmem_backwards_compat_test() {
+  // Note : The total size of the struct must always be 72 to preserve the offsets in DevComm but there
+  // is a total reserved space of 56 bytes that can be repurposed for new fields.
+  static_assert(offsetof(ncclResourceWindow_vidmem, lsaFlatBase) == offsetof(ncclWindow_vidmem, lsaFlatBase));
+  static_assert(offsetof(ncclResourceWindow_vidmem, stride4G) == offsetof(ncclWindow_vidmem, stride4G));
+  static_assert(offsetof(ncclResourceWindow_vidmem, mcOffset4K) == offsetof(ncclWindow_vidmem, mcOffset4K));
+  static_assert(sizeof(ncclResourceWindow_vidmem) == 72);
 }
 
 void ncclDevCommRequirements_backwards_compat_test() {

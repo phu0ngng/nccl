@@ -133,11 +133,10 @@ static inline void allocateSegmentedMemory(
       memprop.location.id = (d->location_id >= 0) ? d->location_id : (int)cudaDev;
       flag = 0;
       CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_WITH_CUDA_VMM_SUPPORTED, currentDev));
-      if (flag) memprop.allocFlags.gpuDirectRDMACapable = 0;
+      if (flag) memprop.allocFlags.gpuDirectRDMACapable = 1;
     } else {
       memprop.location.type = CU_MEM_LOCATION_TYPE_HOST_NUMA;
       memprop.location.id = (d->location_id >= 0) ? d->location_id : numa_id;
-      memprop.allocFlags.gpuDirectRDMACapable = 0;
     }
     CUresult createErr = cuMemCreate(&handles[s], alignedSize, &memprop, 0);
 #if CUDART_VERSION >= 12030
