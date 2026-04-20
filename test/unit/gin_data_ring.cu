@@ -99,7 +99,9 @@ __global__ void runDevice(ncclGinCtx_M<-1u> ctx, ncclGinWindow_t win, int* buf) 
     }
     __syncthreads();
     // Wait for outgoing is complete.
-    ncclGinCall<ncclGinApi_Flush>(ctx, ncclCoopCta(), acq, &abortFlag);
+    ncclGinCall<ncclGinApi_Flush>(ctx, ncclCoopCta(),
+                                  /*hasDescriptor=*/false, /*descriptor=*/nullptr,
+                                  acq, &abortFlag);
     __syncthreads();
     accum += nChunks;
   }

@@ -52,6 +52,33 @@ __global__ void flushAsyncWithSmemKernel(ncclDevComm comm, ncclWindow_t window, 
 #endif
 }
 
+__global__ void flushWithSmemKernel(ncclDevComm comm, ncclWindow_t window, size_t offset, size_t getSize,
+                                    ncclGinSignal_t signalIdx) {
+#if __CUDA_ARCH__ >= 700
+  ncclTeam world = ncclTeamWorld(comm);
+  ncclGin gin(comm, 0);
+
+  if (world.nRanks < 2) {
+    return;
+  }
+
+  __shared__ ncclGinDescriptorSmem desc;
+
+  if (world.rank == REMOTE_RANK) {
+    setBytesPattern(window, offset, getSize);
+    gin.signal(world, LOCAL_RANK, ncclGin_SignalInc{signalIdx}, ncclCoopCta());
+  }
+
+  if (world.rank == LOCAL_RANK) {
+    gin.waitSignal(ncclCoopCta(), signalIdx, 1);
+    gin.get(world, REMOTE_RANK, window, offset, window, offset, getSize, ncclCoopCta());
+    gin.flush(ncclCoopCta(), cuda::memory_order_acquire, ncclGin_DescriptorSmem{&desc});
+    KERNEL_ASSERT_EQ(verifyBytesPattern(window, offset, getSize), true,
+                     "window should have Bytes pattern after flush-with-smem");
+  }
+#endif
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Test class
 ////////////////////////////////////////////////////////////////////////////////
@@ -89,6 +116,22 @@ TEST_F(GinFlush_test, flushAsync_with_smem) {
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     flushAsyncWithSmemKernel<<<1, 512, 0, streams[i]>>>(devComms[i], windows[i], 0, getSize, /*signalIdx*/ 0);
+  }
+  syncAllDevices();
+  cudaError_t err = cudaGetLastError();
+  ASSERT_EQ(err, cudaSuccess) << "Kernel failed: " << cudaGetErrorString(err);
+}
+
+TEST_F(GinFlush_test, flush_with_smem) {
+  size_t getSize = 1024;
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+  reqs.ginSignalCount = 1;
+  TESTCHECK(createDevComms(reqs));
+
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    flushWithSmemKernel<<<1, 512, 0, streams[i]>>>(devComms[i], windows[i], 0, getSize, /*signalIdx*/ 0);
   }
   syncAllDevices();
   cudaError_t err = cudaGetLastError();
