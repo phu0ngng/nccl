@@ -7,7 +7,7 @@
 
 /*
  * API test: multi-segment allocations with 16 segments.
- * Runs LSA AllReduce using segmented buffers (16 segments,
+ * Runs LSA AllReduce and GIN AlltoAll using segmented buffers (16 segments,
  * alternating device / host NUMA)
  */
 
@@ -37,6 +37,14 @@ static void getConfig16Segments(segment_descriptor_t* out) {
 static void getConfig16SegmentsGpuOnly(segment_descriptor_t* out) {
   for (int i = 0; i < numSegments; i++) {
     out[i].location_type = SEGMENT_LOCATION_DEVICE;
+    out[i].location_id = -1;
+    out[i].segment_size = segmentSize;
+  }
+}
+
+static void getConfig16SegmentsHostOnly(segment_descriptor_t* out) {
+  for (int i = 0; i < numSegments; i++) {
+    out[i].location_type = SEGMENT_LOCATION_HOST_NUMA;
     out[i].location_id = -1;
     out[i].segment_size = segmentSize;
   }
@@ -74,6 +82,73 @@ __global__ void PureGinAlltoAllKernel(ncclWindow_t sendwin, size_t sendoffset,
 
   gin.waitSignal(ncclCoopCta(), signalIndex, signalValue + devComm.nRanks);
   gin.flush(ncclCoopCta());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// GIN AlltoAll kernel (with ncclGin_SegmentMixed for multi-segment buffers)
+////////////////////////////////////////////////////////////////////////////////
+
+__global__ void ginAlltoAllKernel(ncclWindow_t sendwin, size_t sendoffset,
+                                  ncclWindow_t recvwin, size_t recvoffset,
+                                  size_t count, struct ncclDevComm devComm) {
+#if __CUDA_ARCH__ >= 700
+  int ginContext = 0;
+  unsigned int signalIndex = 0;
+  ncclGin gin{devComm, ginContext};
+  uint64_t signalValue = gin.readSignal(signalIndex);
+
+  ncclGinBarrierSession<ncclCoopCta> bar{ncclCoopCta(), gin, ncclTeamTagWorld(), blockIdx.x};
+  bar.sync(ncclCoopCta(), cuda::memory_order_relaxed, ncclGinFenceLevel::Relaxed);
+
+  int tid = threadIdx.x + blockIdx.x * blockDim.x;
+  int nthreads = blockDim.x * gridDim.x;
+
+  const size_t size = count * sizeof(float);
+  for (int r = tid; r < devComm.nRanks; r += nthreads) {
+    gin.put(ncclTeamWorld(devComm), r,
+            recvwin, recvoffset + devComm.rank * size,
+            sendwin, sendoffset + r * size,
+            size, ncclGin_SignalInc{signalIndex}, ncclGin_None{}, ncclCoopThread{}, ncclGin_None{},
+            cuda::thread_scope_thread, cuda::thread_scope_device, ncclGinOptFlagsDefault, ncclGin_SegmentMixed{});
+  }
+
+  gin.waitSignal(ncclCoopCta(), signalIndex, signalValue + devComm.nRanks);
+  gin.flush(ncclCoopCta());
+
+  bar.sync(ncclCoopCta(), cuda::memory_order_release, ncclGinFenceLevel::Relaxed);
+#endif
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// GIN Get AlltoAll kernel (with ncclGin_SegmentMixed for multi-segment buffers)
+////////////////////////////////////////////////////////////////////////////////
+
+__global__ void ginGetAlltoAllKernel(ncclWindow_t sendwin, size_t sendoffset,
+                                     ncclWindow_t recvwin, size_t recvoffset,
+                                     size_t count, struct ncclDevComm devComm) {
+#if __CUDA_ARCH__ >= 700
+  int ginContext = 0;
+  ncclGin gin{devComm, ginContext};
+
+  ncclGinBarrierSession<ncclCoopCta> bar{ncclCoopCta(), gin, ncclTeamTagWorld(), blockIdx.x};
+  bar.sync(ncclCoopCta(), cuda::memory_order_acq_rel, ncclGinFenceLevel::Relaxed);
+
+  const size_t chunkBytes = count * sizeof(float);
+  const int rank = devComm.rank;
+  for (int src = 0; src < devComm.nRanks; src++) {
+    // Pull src's data destined for me (at src's sendBuf[rank * chunkBytes])
+    // into my recvBuf[src * chunkBytes]
+    gin.get(ncclTeamWorld(devComm), src,
+            sendwin, sendoffset + rank * chunkBytes,
+            recvwin, recvoffset + src * chunkBytes,
+            chunkBytes,
+            ncclCoopCta{},
+            ncclGin_None{},
+            ncclGinOptFlagsDefault,
+            ncclGin_SegmentMixed{});
+  }
+  gin.flush(ncclCoopCta());
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -277,11 +352,37 @@ protected:
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
   }
 
+  void allocateAndRegisterHostOnlySegmentedWindows() {
+    getConfig16SegmentsHostOnly(descriptors);
+    bufferSizeBytes = getTotalSizeForConfig(descriptors, numSegments);
+
+    sendPtrs.resize(nVis);
+    recvPtrs.resize(nVis);
+    sendWins.resize(nVis);
+    recvWins.resize(nVis);
+
+    ncclResult_t res = ncclGroupStart();
+    ASSERT_EQ(ncclSuccess, res);
+
+    for (int i = 0; i < nVis; i++) {
+      ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+      allocateSegmentedMemory(&sendPtrs[i], descriptors, numSegments);
+      allocateSegmentedMemory(&recvPtrs[i], descriptors, numSegments);
+
+      ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], sendPtrs[i], bufferSizeBytes,
+                                                     &sendWins[i], NCCL_WIN_COLL_SYMMETRIC));
+      ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], recvPtrs[i], bufferSizeBytes,
+                                                     &recvWins[i], NCCL_WIN_COLL_SYMMETRIC));
+    }
+
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+  }
+
   void runGinAlltoAllAndVerify() {
     // Derive per-rank-pair count from buffer size so we span multiple segments
     // regardless of the number of ranks.
-    const size_t alltoallCount = bufferSizeBytes / (nVis * sizeof(float));
-    const size_t totalElements = alltoallCount * nVis;
+    const size_t count = bufferSizeBytes / (nVis * sizeof(float));
+    const size_t totalElements = count * nVis;
     const size_t sizeBytes = totalElements * sizeof(float);
     ASSERT_LE(sizeBytes, bufferSizeBytes);
 
@@ -293,8 +394,8 @@ protected:
 
       // Each rank sends unique values to each destination
       for (size_t j = 0; j < totalElements; j++) {
-        int destRank = j / alltoallCount;
-        int elemIdx = j % alltoallCount;
+        int destRank = j / count;
+        int elemIdx = j % count;
         h_send[j] = (float)(i * 1000 + destRank * 100 + elemIdx);
       }
       segmentedMemcpyToDevice(sendPtrs[i], h_send.data(), sizeBytes,
@@ -304,7 +405,7 @@ protected:
       ASSERT_EQ(cudaSuccess, cudaMemset(recvPtrs[i], 0, sizeBytes));
 
       PureGinAlltoAllKernel<float><<<ginCtaCount, ginThreadsPerCta, 0, streams[i]>>>(
-          sendWins[i], 0, recvWins[i], 0, alltoallCount, devComms[i]);
+          sendWins[i], 0, recvWins[i], 0, count, devComms[i]);
     }
     syncAllDevices();
 
@@ -314,11 +415,81 @@ protected:
       segmentedMemcpyToHost(recvPtrs[i], h_recv.data(), sizeBytes,
                             descriptors, numSegments);
       for (int srcRank = 0; srcRank < nVis; srcRank++) {
-        for (size_t e = 0; e < alltoallCount; e++) {
-          size_t recvIdx = srcRank * alltoallCount + e;
+        for (size_t e = 0; e < count; e++) {
+          size_t recvIdx = srcRank * count + e;
           float expected = (float)(srcRank * 1000 + i * 100 + e);
           ASSERT_FLOAT_EQ(h_recv[recvIdx], expected)
               << "rank " << i << " from src " << srcRank << " index " << e;
+        }
+      }
+    }
+  }
+
+  void runGinMultiSegmentAlltoAllAndVerify() {
+    const size_t count = bufferSizeBytes / (nVis * sizeof(float));
+    const size_t totalBytes = count * nVis * sizeof(float);
+    ASSERT_LE(totalBytes, bufferSizeBytes);
+
+    std::vector<float> h_send(count * nVis);
+    std::vector<float> h_recv(count * nVis);
+
+    for (int i = 0; i < nVis; i++) {
+      ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+      for (int r = 0; r < nVis; r++)
+        for (size_t j = 0; j < count; j++)
+          h_send[r * count + j] = (float)(i * 1000 + r);
+      segmentedMemcpyToDevice(sendPtrs[i], h_send.data(), totalBytes,
+                              descriptors, numSegments);
+
+      ginAlltoAllKernel<<<lsaCtaCount, lsaThreadsPerCta, 0, streams[i]>>>(
+          sendWins[i], 0, recvWins[i], 0, count, devComms[i]);
+    }
+    syncAllDevices();
+
+    for (int i = 0; i < nVis; i++) {
+      ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+      segmentedMemcpyToHost(recvPtrs[i], h_recv.data(), totalBytes,
+                            descriptors, numSegments);
+      for (int r = 0; r < nVis; r++) {
+        for (size_t j = 0; j < count; j++) {
+          float expected = (float)(r * 1000 + i);
+          ASSERT_FLOAT_EQ(h_recv[r * count + j], expected)
+              << "rank " << i << " from rank " << r << " index " << j;
+        }
+      }
+    }
+  }
+
+  void runGinMultiSegmentGetAlltoAllAndVerify() {
+    const size_t count = bufferSizeBytes / (nVis * sizeof(float));
+    const size_t totalBytes = count * nVis * sizeof(float);
+    ASSERT_LE(totalBytes, bufferSizeBytes);
+
+    std::vector<float> h_send(count * nVis);
+    std::vector<float> h_recv(count * nVis);
+
+    for (int i = 0; i < nVis; i++) {
+      ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+      for (int r = 0; r < nVis; r++)
+        for (size_t j = 0; j < count; j++)
+          h_send[r * count + j] = (float)(i * 1000 + r);
+      segmentedMemcpyToDevice(sendPtrs[i], h_send.data(), totalBytes,
+                              descriptors, numSegments);
+
+      ginGetAlltoAllKernel<<<lsaCtaCount, lsaThreadsPerCta, 0, streams[i]>>>(
+          sendWins[i], 0, recvWins[i], 0, count, devComms[i]);
+    }
+    syncAllDevices();
+
+    for (int i = 0; i < nVis; i++) {
+      ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+      segmentedMemcpyToHost(recvPtrs[i], h_recv.data(), totalBytes,
+                            descriptors, numSegments);
+      for (int r = 0; r < nVis; r++) {
+        for (size_t j = 0; j < count; j++) {
+          float expected = (float)(r * 1000 + i);
+          ASSERT_FLOAT_EQ(h_recv[r * count + j], expected)
+              << "rank " << i << " from rank " << r << " index " << j;
         }
       }
     }
@@ -385,38 +556,118 @@ TEST_F(ncclDevApi_multi_segment_test, GIN_alltoall_16_gpu_segments) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Test cases: Test window register failure with interleaved segments + GIN
+// Test cases: GIN with 16 interleaved segments (GPU + host NUMA)
 ////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(ncclDevApi_multi_segment_test, sysmem_segments_register_returns_invalid_argument) {
+TEST_F(ncclDevApi_multi_segment_test, GIN_alltoall_16_segments) {
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
-  reqs.worldGinBarrierCount = ginCtaCount;
+  reqs.worldGinBarrierCount = lsaCtaCount;
   reqs.ginSignalCount = 1;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
   TESTCHECK(createDevComms(reqs));
 
-  getConfig16Segments(descriptors);
-  bufferSizeBytes = getTotalSizeForConfig(descriptors, numSegments);
+  allocateAndRegisterSegmentedWindows();
+  runGinMultiSegmentAlltoAllAndVerify();
+  deregisterAndFreeSegmentedWindows();
+}
 
-  sendPtrs.resize(nVis);
-  sendWins.resize(nVis);
+////////////////////////////////////////////////////////////////////////////////
+// Test cases: GIN get-based alltoall with 16 interleaved segments (GPU + host NUMA)
+////////////////////////////////////////////////////////////////////////////////
 
-  ncclResult_t res = ncclGroupStart();
-  ASSERT_EQ(ncclSuccess, res);
+TEST_F(ncclDevApi_multi_segment_test, GIN_get_alltoall_16_segments) {
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.worldGinBarrierCount = lsaCtaCount;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+  TESTCHECK(createDevComms(reqs));
+
+  allocateAndRegisterSegmentedWindows();
+  runGinMultiSegmentGetAlltoAllAndVerify();
+  deregisterAndFreeSegmentedWindows();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Test cases: GIN with 16 host-only segments
+////////////////////////////////////////////////////////////////////////////////
+
+TEST_F(ncclDevApi_multi_segment_test, GIN_alltoall_16_host_segments) {
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.worldGinBarrierCount = lsaCtaCount;
+  reqs.ginSignalCount = 1;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+  TESTCHECK(createDevComms(reqs));
+
+  allocateAndRegisterHostOnlySegmentedWindows();
+  runGinMultiSegmentAlltoAllAndVerify();
+  deregisterAndFreeSegmentedWindows();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Test cases: GIN get-based alltoall with 16 host-only segments
+////////////////////////////////////////////////////////////////////////////////
+
+TEST_F(ncclDevApi_multi_segment_test, GIN_get_alltoall_16_host_segments) {
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.worldGinBarrierCount = lsaCtaCount;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+  TESTCHECK(createDevComms(reqs));
+
+  allocateAndRegisterHostOnlySegmentedWindows();
+  runGinMultiSegmentGetAlltoAllAndVerify();
+  deregisterAndFreeSegmentedWindows();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Test case: registration must fail when segment sizes differ across ranks
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(ncclDevApi_multi_segment_test, registration_fails_mismatched_segment_sizes) {
+
+  // GIN must be enabled so symMemoryRegisterGin runs the cross-rank validation.
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+  TESTCHECK(createDevComms(reqs));
+
+  // Rank i uses (i+1)*segmentSize per segment, so rank 0 gets 2 MB, rank 1
+  // gets 4 MB, etc.  All ranks mix device and host-NUMA segments to ensure
+  // globalHasSysmemSegment is true on every rank.
+  std::vector<std::vector<segment_descriptor_t>> rankDescs(
+      nVis, std::vector<segment_descriptor_t>(numSegments));
+  std::vector<size_t> rankBufBytes(nVis, 0);
+
+  for (int i = 0; i < nVis; i++) {
+    const size_t sz = (size_t)(i + 1) * segmentSize;
+    for (int s = 0; s < numSegments; s++) {
+      rankDescs[i][s].location_type =
+          (s % 2 == 0) ? SEGMENT_LOCATION_DEVICE : SEGMENT_LOCATION_HOST_NUMA;
+      rankDescs[i][s].location_id   = -1;
+      rankDescs[i][s].segment_size  = sz;
+    }
+    rankBufBytes[i] = getTotalSizeForConfig(rankDescs[i].data(), numSegments);
+  }
+
+  std::vector<void*> ptrs(nVis, nullptr);
+  std::vector<ncclWindow_t> wins(nVis, nullptr);
 
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
-    allocateSegmentedMemory(&sendPtrs[i], descriptors, numSegments);
-    ASSERT_NE(nullptr, sendPtrs[i]);
-
-    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], sendPtrs[i], bufferSizeBytes,
-                                                           &sendWins[i], NCCL_WIN_COLL_SYMMETRIC));
+    allocateSegmentedMemory(&ptrs[i], rankDescs[i].data(), numSegments);
   }
 
-  ASSERT_EQ(ncclInvalidArgument, ncclGroupEnd());
+  // Individual ncclCommWindowRegister calls inside the group only enqueue the
+  // task; the actual cross-rank bootstrapAllGather and segment-size comparison
+  // happen in ncclGroupEnd, where ncclInvalidUsage is expected.
+  ASSERT_EQ(ncclSuccess, ncclGroupStart());
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    ncclCommWindowRegister(comms[i], ptrs[i], rankBufBytes[i], &wins[i],
+                           NCCL_WIN_COLL_SYMMETRIC);
+  }
+  ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
 
   for (int i = 0; i < nVis; i++) {
-    deallocateSegmentedMemory(sendPtrs[i], descriptors, numSegments);
-    sendPtrs[i] = nullptr;
+    if (ptrs[i]) {
+      ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+      deallocateSegmentedMemory(ptrs[i], rankDescs[i].data(), numSegments);
+    }
   }
 }
