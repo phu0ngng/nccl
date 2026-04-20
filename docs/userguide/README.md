@@ -1,45 +1,34 @@
 # Building NCCL Documentation
 
-## Quick Start: Wrapper Script (Recommended)
+## Quick Start
 
-The easiest method, from the NCCL root directory:
-
-```bash
-docs/userguide/build_docs.sh
-```
-
-This automatically:
-- Creates/updates a Python virtual environment at `docs/userguide/.venv`
-- Installs the recommended pinned sphinx dependencies from `docs/userguide/requirements.txt`
-- Builds HTML documentation using Make
-- Packages HTML documentation into a .zip file.
-
-The `docs/userguide/.venv` environment is persistent, but can be removed manually.  It is
-automatically updated in case requirements.txt changes.
-
-Output: `build/doc/html/index.html` and `build/pkg/doc/nccl-doc_*.zip`
-
-## Manual Build: Makefile
-
-If you have sufficient versions of the sphinx packages already installed, you
-may not need the virtual environment, and can just run `make pkg.doc.build`.  If
-you wish to install and use recommended python package versions, follow these
-steps:
+To package the userguide into a convenient zip file (`build/pkg/doc/nccl-doc_*.zip`):
 
 ```bash
-# 1. Create and activate virtual environment
-python3 -m venv docs/userguide/.venv
-source docs/userguide/.venv/bin/activate
-
-# 2. Install dependencies
-pip install -r docs/userguide/requirements.txt
-
-# 3. Build documentation
-make pkg.doc.build
-
-# 4. Deactivate venv
-deactivate
+nccl$ make pkg.doc.build
 ```
+
+To make the NCCL html userguide in the build directory (`build/doc/html`):
+
+```bash
+nccl$ make -C docs/userguide html
+```
+
+The make commands assume the build environment contains Sphinx and a few python
+dependencies (see requirements.txt).  In case you need to build a python virtual
+environment to manage these dependencies, a small script is provided to do so.  It
+creates (`docs/userguide/.venv`) and invokes the build commands after invoking the
+virtual environment.
+
+```bash
+nccl$ docs/userguide/build_docs.sh
+```
+
+By default this script creates the .venv, installs packages acccording to
+requirements.txt, and builds the the pkg.doc.build target to package the
+docs into a zip file.  The `docs/userguide/.venv` environment is persistent,
+but can be removed manually.
+
 
 ## Alternative: CMake
 
@@ -55,12 +44,12 @@ Output: `cmake_build/doc/html/index.html` and `cmake_build/pkg/doc/nccl-doc_*.zi
 
 ## Additional Targets
 
-For other Sphinx output formats (using Makefile or wrapper script):
+Additional Sphinx output formats (other than html) may be built using the makefile (or wrapper script):
 
 ```bash
-docs/userguide/build_docs.sh linkcheck  # Check external links
-docs/userguide/build_docs.sh latex      # Build LaTeX/PDF
-docs/userguide/build_docs.sh man        # Build man pages
+nccl/docs/userguide$ make linkcheck  # Check external links
+nccl/docs/userguide$ make latex      # Build LaTeX/PDF
+nccl/docs/userguide$ make man        # Build man pages
 ```
 
 These targets may require additional packages.  For LaTeX targets, we recommend
@@ -68,4 +57,4 @@ the following packages on debian-based distros:
 
     latexmk texlive-latex-extra
 
-Run `make -C docs/userguide help` to see all available targets.
+The `help` target lists many additional sphinx output formats.
