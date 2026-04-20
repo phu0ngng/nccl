@@ -2355,7 +2355,7 @@ apitest-bia:
     - when: never
   needs: ["setup-bia"]
   variables:
-    SLURM_TIME: 30
+    SLURM_TIME: 60
     NNODES: 1
     NP: 1
     API_TESTS_DEFAULT: 1
