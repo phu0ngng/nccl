@@ -236,6 +236,37 @@ Starting with version 2.23, NCCL utilizes CUDA memory pools to optimize graph ca
 being available. While UVM may not be on by default in some virtual machine (VM) setups, it can typically be enabled through a
 configuration change.
 
+****************
+File Descriptors
+****************
+
+NCCL uses a considerable number of file descriptors when running at scale, so the limits may need to be raised.  E.g., a
+144-rank job using 16 GIN contexts may require over 32K file descriptors per process.
+
+There is the system-wide limit:
+
+.. code:: shell
+
+ cat /proc/sys/fs/file-max
+
+Default values in the millions are common, and systemd may set it even higher.  If, however, the limit has been
+artificially lowered (e.g., by a file under ``/etc/sysctl.d/``), then it may need to be increased again:
+
+.. code:: shell
+
+ sysctl -w fs.file-max=2097152
+
+There is also the per-process limit that can be queried using ``ulimit -n``.  To raise it permanently, create a
+new file under ``/etc/security/limits.d/`` (or edit an existing one), adding a line such as:
+
+.. code:: shell
+
+ * - nofile 131072
+
+This sets both the soft and hard limit for all users to 128K.
+
+Note that raising the system-wide limit or the per-process hard limit needs to be done by the system administrator.
+
 *****************
 Networking issues
 *****************
