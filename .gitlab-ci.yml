@@ -3433,6 +3433,7 @@ perftest-multi-theia:
     RMA: 1
     GRAPH: 0
     NNODES: $MULTI_PERFTEST_NODE_COUNT
+    RUN_GDRCOPY_TESTS: "1"
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -3607,6 +3608,7 @@ perftest-multi-bia:
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     # Re-enable after resolving https://nvbugspro.nvidia.com/bug/5793707
     WORKAROUND_NVBUG_5793707: 1
+    RUN_GDRCOPY_TESTS: "1"
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
