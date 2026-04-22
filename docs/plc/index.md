@@ -9,6 +9,7 @@
 - [TMA Support for Symmetric Kernels](items/id_8B5583C2/TMA_Support_for_Symmetric_Kernels.md)
 - [alltoallv perf test](items/id_4b0fb00b/alltoallv_perf_test.md)
 - [NVL576: Cross Clique P2P IPC Support](items/id_80B28435/Cross-Clique_P2P_IPC_Support.md)
+- [Elastic_buffer_support_for_Device_APIs](items/id_1353E735/Elastic_buffer_support_for_Device_APIs.md)
 <!-- V2_30_DO_NOT_MOVE -->
 
 <!------------------------------------->
