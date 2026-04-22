@@ -751,9 +751,9 @@ github-sim:
     - when: never
   trigger:
     include:
-      - project: nccl/ci-infra
+      - project: gpucomms/cicd-platform
         ref: main
-        file: github-first/.gitlab-ci.yml
+        file: pipelines/github-first/.nccl-filtered-ci.yml
     strategy: depend
   variables:
     CI_INFRA_REF: main
