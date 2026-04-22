@@ -2,6 +2,43 @@
 # Reference: https://docs.gitlab.com/user/project/codeowners/reference/
 # "^" prefix on a section means approval from those owners is optional
 
+^[Core] @sjeaugey
+src/CMakeLists.txt @udeodhar @yanfeig
+src/Makefile @daddison @jbachan
+src/allocator.cc @kiskra @zhenhaoh
+src/bootstrap.cc @kouyang @daddison @tgillis
+src/ce_coll.cc @zhenhaoh @jcalvin
+src/channel.cc @daddison @kouyang
+src/collectives.cc @zhenhaoh @jbachan @kiskra
+src/debug.cc @daddison @msantesson
+src/dev_runtime.cc @kiskra @jbachan
+src/devcomm/ @kiskra @bhramesh
+src/device/ @kiskra @jbachan @kgioioso
+src/enqueue.cc @jbachan @kouyang @zhenhaoh
+src/generate_header.cmake @udeodhar
+src/gin/ @kgioioso @kiskra
+src/graph/ @daddison @tgillis
+src/group.cc @kouyang @zhenhaoh
+src/include/ @kiskra @kgioioso
+src/init.cc @kouyang @tgillis
+src/libnccl.map @yanfeig
+src/mem_manager.cc @zhenhaoh @bhramesh
+src/misc/ @kouyang @kiskra
+src/mnnvl.cc @daddison @zhenhaoh
+src/nccl.h.in @kiskra @kouyang
+src/nccl_device/ @jbachan
+src/os/ @achartier @udeodhar
+src/param/ @yanfeig
+src/plugin/ @gcongiu @udeodhar
+src/proxy.cc @kouyang @daddison
+src/ras/ @kiskra @udeodhar
+src/register/ @kouyang @kiskra
+src/rma/ @zhenhaoh
+src/scheduler/ @kouyang @kiskra @jbachan
+src/sym_kernels.cc @kiskra @kouyang
+src/transport/ @daddison
+src/transport.cc @kouyang @daddison
+
 ^[DevOps] @kartiki @jskrobola @chricao
 docker/
 .gitlab-ci.yml
