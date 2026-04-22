@@ -595,7 +595,6 @@ def main():
     clang_args = [
         '-x', 'c-header', '-std=c99',
         '-DNCCL_OS_LINUX',
-        '-Dalignas(x)=',
         '-D_NCCL_GIN_DEVICE_COMMON_H_',
         '-D_NCCL_DEVICE_GIN_SESSION__FUNCS_H_',
         '-D_NCCL_DEVICE_VECTOR__TYPES_H_',
