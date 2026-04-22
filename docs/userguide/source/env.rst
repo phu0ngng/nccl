@@ -1719,9 +1719,8 @@ NCCL_SYM_GIN_KERNELS_ENABLE
 ---------------------------
 (since 2.29U1)
 
-Enable use of symmetric kernels that use GIN for network communication. These
-kernels do not yet honor ncclCommAbort() so they are currently disabled by default.
+Enable use of symmetric kernels that use GIN for network communication.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is 0 (disabled); set to 1 to enable
+Default is 1 (enabled); set to 0 to disable
