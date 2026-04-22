@@ -632,6 +632,10 @@ def main():
 
             walk_type_deps(g, decl_c, args.nccl_device_include, visited)
 
+        # Also walk return type dependencies (e.g. ncclTeamWorld returns ncclTeam_t)
+        ret_t = peel_type(api_cursor.result_type)[0]
+        walk_type_deps(g, ret_t.get_declaration(), args.nccl_device_include, visited)
+
     # Optionally generate and save the type dependency graph
     if args.output_graph:
         draw_graph(g, args.output_graph)
