@@ -307,12 +307,7 @@ def normalize_type_for_pycparser(type_spelling: str, type_obj: Type = None) -> s
 
 
 def emit_api(api_cursor: Cursor) -> str:
-    parts = []
-    for i, param in enumerate(get_parameters(api_cursor)):
-        ptype = normalize_type_for_pycparser(param.type.spelling, param.type)
-        pname = param.spelling if param.spelling else f"arg{i}"
-        parts.append(f"{ptype} {pname}")
-    params = ", ".join(parts)
+    params = ", ".join(f"{normalize_type_for_pycparser(param.type.spelling, param.type)} {param.spelling}" for param in get_parameters(api_cursor))
     return f"{normalize_type_for_pycparser(api_cursor.result_type.spelling, api_cursor.result_type)} {api_cursor.spelling}({params})"
 
 
