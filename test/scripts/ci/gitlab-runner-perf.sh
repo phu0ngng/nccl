@@ -124,7 +124,9 @@ if [ "$DEVICE_API" != "0" ]; then
       run_command "all_reduce_perf_device_lsa_${impl}" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/all_reduce_perf" "$range $opts -R 2 -D $impl"
       if [ "$NGPUS" -ge "3" ]; then
         run_command "all_reduce_perf_device_lsa_${impl}_multithread" $RUN_MODE 1 "" "" "$NCCL_HOME/test/perf/all_reduce_perf" "$range $opts -t $NGPUS -g 1 -R 2 -D $impl"
-        run_command "all_reduce_perf_device_lsa_${impl}_multigpu" $RUN_MODE 1 "" "" "$NCCL_HOME/test/perf/all_reduce_perf" "$range $opts -t 1 -g $NGPUS -R 2 -D $impl"
+        if [ "${GRAPH:-0}" == "0" ]; then
+          run_command "all_reduce_perf_device_lsa_${impl}_multigpu" $RUN_MODE 1 "" "" "$NCCL_HOME/test/perf/all_reduce_perf" "$range $opts -t 1 -g $NGPUS -R 2 -D $impl"
+        fi
       fi
     done
     for impl in 1 2; do
@@ -158,7 +160,7 @@ then
   done
 fi
 
-if [ "$SKIP_MULTI_GPU" != "1" ];
+if [ "$SKIP_MULTI_GPU" != "1" ] && [ "${GRAPH:-0}" == "0" ];
 then
   let np=$NNODES
   for func in all_reduce_perf alltoall_perf; do
@@ -443,10 +445,12 @@ if [ "${RUN_GDRCOPY_TESTS:-0}" == "1" ]; then
   # sameDevice guard. cross-clique-wrapper.sh (CLIQUE_SIZE=1) forces
   # inter-node traffic onto IB on MNNVL clusters; no-op elsewhere.
   export NCCL_GDRCOPY_FIFO_ENABLE=1 NCCL_GDRCOPY_SYNC_ENABLE=1 NCCL_GDRCOPY_FLUSH_ENABLE=0
-  for func in $gdrcopy_funcs; do
-    run_command "${func}_gdrcopy_pxn" $RUN_MODE 1 "" "CLIQUE_SIZE=1 NCCL_IB_HCA=mlx5_0" \
-      "$xc_pxn_wrapper $NCCL_HOME/test/perf/$func" "$range $opts -t 1 -g $NGPUS"
-  done
+  if [ "${GRAPH:-0}" == "0" ]; then
+    for func in $gdrcopy_funcs; do
+      run_command "${func}_gdrcopy_pxn" $RUN_MODE 1 "" "CLIQUE_SIZE=1 NCCL_IB_HCA=mlx5_0" \
+        "$xc_pxn_wrapper $NCCL_HOME/test/perf/$func" "$range $opts -t 1 -g $NGPUS"
+    done
+  fi
 fi
 
 # Native cross-clique P2P (real rack topology, NCCL_MNNVL_CLIQUE_ID=-2)

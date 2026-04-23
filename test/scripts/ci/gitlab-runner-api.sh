@@ -49,13 +49,18 @@ run_device_api_test(){
     fi
 }
 
+# CUDA graph capture is only supported with one GPU per process
+# Disable ncclCudaGraph_test until we add support for running GTest in that mode.
+cudaGraphTests="ncclCudaGraph_test.*"
+
 # list of tests with a special config
 multinetTests="ncclCommInitRankConfig_test.multi_net_plugin_*"
 sharedPluginTest="ncclCommInitRankConfig_test.shared_plugin_lib"
 initOnceTest="ncclCommInitRankConfig_test.init_net_dev_once"
 splitOnceTest="ncclCommSplit_test.init_net_dev_once"
 ginInitContext="ncclCommInitRankConfig_test.gin_init_context"
-gtestFilter="-${multinetTests}:${sharedPluginTest}:${initOnceTest}:${splitOnceTest}:${ginInitContext}"
+
+gtestFilter="-${multinetTests}:${sharedPluginTest}:${initOnceTest}:${splitOnceTest}:${ginInitContext}:${cudaGraphTests}"
 
 if [[ ${API_TESTS_RMA} -ne 1 ]] ; then
   gtestFilter="${gtestFilter}:ncclOneSidedRma_test.*"

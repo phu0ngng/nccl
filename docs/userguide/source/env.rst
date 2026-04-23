@@ -1371,6 +1371,9 @@ Effective only when:
 (ii) all GPUs within a node have P2P access to each other;
 (iii) there is at most one GPU per process.
 
+.. warning::
+   Using multiple GPUs per process with CUDA graph capture may result in deadlocks under certain conditions. See :ref:`using-nccl-with-cuda-graphs` for details.
+
 User buffer registration may reduce the number of data copies between user buffers and the internal buffers of NCCL.
 The user buffers will be automatically de-registered when the CUDA Graphs are destroyed.
 

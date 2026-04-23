@@ -1908,6 +1908,12 @@ int main(int argc, char* argv[], char **envp) {
     }
   }
 
+  if (nGpus * nThreads > 1 && cudaGraphLaunches >= 1) {
+    fprintf(stderr, "WARNING: CUDA graphs with multiple GPUs per process (nThreads=%d, nGpus=%d, cudaGraphLaunches=%d) "
+                    "may result in deadlocks. For best experience, use one GPU per process (-t 1 -g 1) with CUDA graphs (-G).\n",
+                    nThreads, nGpus, cudaGraphLaunches);
+  }
+
   const output_file_type_t output_file_type = classifyOutputFile(output_file);
   outputFileInit(output_file_type, output_file, argc, argv, envp);
 
