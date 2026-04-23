@@ -1,0 +1,14 @@
+# Install with the PyTorch CUDA 12 index as an extra index, e.g.:
+#   pip install -r requirements_cu12.txt --extra-index-url https://download.pytorch.org/whl/cu128
+# Replace cu128 with the cu12x build matching your CUDA toolkit
+# (see https://pytorch.org/get-started/locally/ for available tags).
+
+nccl4py[cu12]
+torch==2.10
+cupy-cuda12x~=13.6
+pytest
+pytest-cov
+pytest-mpi
+pytest-run-parallel
+mpi4py
+ml-dtypes

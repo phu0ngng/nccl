@@ -1,0 +1,14 @@
+# Install with the PyTorch CUDA 13 index as an extra index:
+#   pip install -r requirements_cu13.txt --extra-index-url https://download.pytorch.org/whl/cu130
+# PyTorch currently only supports CUDA 13.0 for the CUDA 13 series
+# (see https://pytorch.org/get-started/locally/).
+
+nccl4py[cu13]
+torch==2.10
+cupy-cuda13x~=13.6
+pytest
+pytest-cov
+pytest-mpi
+pytest-run-parallel
+mpi4py
+ml-dtypes
