@@ -170,7 +170,7 @@ def test_send_recv_ping_pong(nccl_comm, rank_info, allocator):
 
 @pytest.mark.mpi(min_size=2)
 @pytest.mark.parametrize("allocator", ["cupy", "torch", "interop.cupy", "interop.torch"])
-def test_send_recv_ring(nccl_comm, rank_info, allocator):
+def test_send_recv_ring(mpi_comm, nccl_comm, rank_info, allocator):
     """Test ring topology: each rank sends to right neighbor and receives from left neighbor."""
     self_rank = rank_info.nccl_rank
     nranks = rank_info.nccl_size
@@ -190,6 +190,11 @@ def test_send_recv_ring(nccl_comm, rank_info, allocator):
     _sync(allocator)
     result = _to_numpy(recv_data)
     assert np.allclose(result, expected), f"{allocator}: expected {expected}, got {result}"
+
+    # Workaround for https://github.com/NVIDIA/nccl/issues/1967: sync all ranks
+    # before the nccl_comm fixture tears down, otherwise commDestroy can hang on
+    # multi-node rings. Remove once the libnccl fix (gitlab MR !1967) ships.
+    mpi_comm.Barrier()
 
 
 # --- Collective Tests ---

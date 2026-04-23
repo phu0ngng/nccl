@@ -98,6 +98,12 @@ class RankInfo:
     nccl_size: int
     nccl_local_rank: int
 
+
+@pytest.fixture(scope="session")
+def mpi_comm():
+    return MPI.COMM_WORLD
+
+
 @pytest.fixture(scope="session")
 def rank_info():
     comm = MPI.COMM_WORLD
