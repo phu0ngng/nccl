@@ -3784,8 +3784,14 @@ __global__ void dispatch_kernel(const __grid_constant__ dispatch_kernel_param_t<
 
       // Last block to arrive: all blocks' TMA writes are now system-visible.
       // Signal the inter-rank completion flag.
+      // Use __threadfence_system() + red.release.sys to ensure all prior
+      // global stores (including TMA cp.async.bulk) are visible to other
+      // ranks before the flag update.  Without this, relaxed atomics on
+      // NVLink provide no happens-before relationship and a polling rank
+      // can observe the flag but read stale TMA data from L2.
       if (arrived == NUM_OF_BLOCKS - 1) {
-          asm volatile("red.relaxed.sys.global.add.u32 [%0], %1;"
+          __threadfence_system();
+          asm volatile("red.release.sys.global.add.u32 [%0], %1;"
                        :
                        : "l"(__cvta_generic_to_global(
                              param.intra_node_write_completion_flags)), "n"(1)
@@ -3795,7 +3801,9 @@ __global__ void dispatch_kernel(const __grid_constant__ dispatch_kernel_param_t<
       // All blocks poll the inter-rank flag until all ranks have signaled.
       uint32_t flag_data;
       do {
-          asm volatile("ld.relaxed.sys.global.u32 %0, [%1];"
+          // Use ld.acquire.sys so that subsequent reads are ordered after the
+          // flag load — guaranteeing we see data written before the flag.
+          asm volatile("ld.acquire.sys.global.u32 %0, [%1];"
                        : "=r"(flag_data)
                        : "l"(__cvta_generic_to_global(
                              param.intra_node_write_completion_flags))
@@ -3894,8 +3902,14 @@ __global__ void combine_kernel(const __grid_constant__ combine_kernel_param_t<LS
 #ifdef HYBRIDEP_ENABLE_WARP_TIMING
   if (threadIdx.x == 0) _wt_head_start = clock64();
 #endif
+  // Use __threadfence_system() + red.release.sys to ensure all prior
+  // global stores (including TMA cp.async.bulk) are visible to other
+  // ranks before the flag update.  Without this, relaxed atomics on
+  // NVLink provide no happens-before relationship and a polling rank
+  // can observe the flag but read stale TMA data from L2.
   if (threadIdx.x == 0 && blockIdx.x == 0) {
-      asm volatile("red.relaxed.sys.global.add.u32 [%0], %1;"
+      __threadfence_system();
+      asm volatile("red.release.sys.global.add.u32 [%0], %1;"
                    :
                    : "l"(__cvta_generic_to_global(
                          param.intra_node_write_completion_flags)), "n"(1)
@@ -3905,7 +3919,9 @@ __global__ void combine_kernel(const __grid_constant__ combine_kernel_param_t<LS
   if (threadIdx.x == 0) {
       uint32_t flag_data;
       do {
-          asm volatile("ld.relaxed.sys.global.u32 %0, [%1];"
+          // Use ld.acquire.sys so that subsequent reads are ordered after the
+          // flag load — guaranteeing we see data written before the flag.
+          asm volatile("ld.acquire.sys.global.u32 %0, [%1];"
                        : "=r"(flag_data)
                        : "l"(__cvta_generic_to_global(
                              param.intra_node_write_completion_flags))
