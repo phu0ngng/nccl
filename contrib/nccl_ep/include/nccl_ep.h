@@ -44,6 +44,14 @@ typedef struct {
     // Number of channels per rank (NCCL_EP_AUTO for auto).
     // In high throughput collectives, each channel occupies 2 SMs
     unsigned int num_channels;
+    // Expert-major output buffer overallocation factor (fixed-point, 0.01 units).
+    // The dispatch output IPC buffer is sized as:
+    //   max_output_slots = max_recv_tokens * nRanks * expert_major_overalloc / 100
+    // With expert-major layout and same-rank multi-expert routing (top_k > 1),
+    // a token routed to multiple experts on the same rank occupies one slot per expert,
+    // so the total slots can exceed max_recv_tokens.
+    // Default (0 or NCCL_EP_AUTO): 250 (= 2.5x).
+    unsigned int expert_major_overalloc;
 } ncclEpGroupConfig_t;
 
 // Opaque type forward declaration
@@ -141,45 +149,80 @@ ncclResult_t ncclEpTensorDestroy(
     ncclNDTensor_t tensor
 );
 
+// Token ordering in the dispatch output buffer.
+typedef enum {
+    NCCL_EP_OUTPUT_LAYOUT_GPU_MAJOR    = 0,  // default: tokens grouped by source GPU
+    NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR = 1,  // tokens grouped by local expert (required for GroupedGEMM)
+} ncclEpOutputLayout_t;
+
+// Controls zeroing of padding slots in expert-major dispatch output (alignment > 1).
+// Padding is zero-initialized by the LCP warp inside the dispatch kernel.
+typedef enum {
+    // Zero padding slots (default; value=0 so zero-initialized config gets this).
+    NCCL_EP_ZERO_PADDING_ENABLE  = 0,
+    // Skip zeroing. Caller must not read past actual token counts per expert.
+    NCCL_EP_ZERO_PADDING_DISABLE = 1,
+} ncclEpZeroPaddingMode_t;
+
+// Per-handle configuration (pass to ncclEpCreateHandle; NULL uses defaults).
+struct ncclEpHandleConfig {
+    // Token ordering in the dispatch output buffer (default: GPU_MAJOR).
+    ncclEpOutputLayout_t dispatch_output_layout;
+    // Per-expert block alignment in the dispatch output, in tokens.
+    // 0 or 1 = no padding.  Must be a power of two when > 1.
+    // Required for cuBLAS GroupedGEMM alignment.
+    size_t dispatch_output_per_expert_alignment;
+    // Padding zeroing mode (only applies when layout == EXPERT_MAJOR and alignment > 1).
+    // Default: ENABLE (value=0, set automatically by zero-initializing this struct).
+    ncclEpZeroPaddingMode_t zero_padding_mode;
+};
+
 // Opaque type forward declaration
 typedef struct ncclEpHandle* ncclEpHandle_t;
-typedef struct ncclEpHandleConfig* ncclEpHandleConfig_t;  // Reserved for future use
+typedef struct ncclEpHandleConfig* ncclEpHandleConfig_t;
+
+// Per-expert dispatch metadata written during ncclEpCreateHandle.
+// Caller allocates device buffers; set a field to NULL to skip that output.
+typedef struct {
+    ncclNDTensor_t expert_token_counts;        // 1D ncclInt32 [num_local_experts]
+                                               //   unpadded token count per expert (actual tokens received)
+                                               //   NULL to skip
+    ncclNDTensor_t expert_token_counts_padded; // 1D ncclInt64 [num_local_experts]
+                                               //   aligned count: roundup(recv[e], alignment)
+                                               //   NULL to skip; only valid with EXPERT_MAJOR layout
+    ncclNDTensor_t expert_token_offsets;       // 1D ncclInt64 [num_local_experts]
+                                               //   prefix-sum of aligned counts;
+                                               //   offsets[e] = start token index of expert e
+                                               //   NULL to skip; only valid with EXPERT_MAJOR layout
+} ncclEpDispatchMeta_t;
 
 // Create and initialize an EP handle.
 //   * Performs dispatch setup and (in HT mode only) metadata exchange.
 //   * This call is collective and must be invoked by all ranks in the group.
 //
 // Arguments:
-//   handle              - [OUT] Pointer to newly created and initialized EP handle
-//   ep_group            - [IN]  A valid EP group
-//   topk_idx            - [IN]  Tensor holding top-K expert indices (routing information)
-//   local_tensors       - [IN/OUT, optional] Array of pointers to local tensors.
-//                         HT: accepts optional RECV_EXPERT_COUNTER tensor (1D, ncclInt32, size=num_local_experts)
-//                         with tag NCCL_EP_TENSOR_TAG_RECV_EXPERT_COUNTER_HOST (pinned+mapped) or _DEVICE.
-//                         Required when max_tokens_per_rank is NCCL_EP_AUTO.
-//                         LL mode: does not accept local tensors (num_local_tensors must be 0).
-//   num_local_tensors   - [IN]  Number of local tensors.
-//   config              - [IN]  Reserved for future options (should be set to NULL)
-//   stream              - [IN]  CUDA stream
-//   use_fp8             - [IN]  Enable FP8 for dispatch (default: false)
-//
-// Notes:
-//   - If max_tokens_per_rank in ncclEpGroupConfig_t was set to NCCL_EP_AUTO,
-//     this call may block as the host allocates memory for the actual number
-//     of received tokens.
-//   - The config argument is reserved; must be set to NULL for now.
+//   handle    - [OUT] Newly created EP handle
+//   ep_group  - [IN]  A valid EP group
+//   topk_idx  - [IN]  Routing tensor: SPARSE [num_tokens, top_k] int64
+//   config    - [IN]  Optional handle config (NULL uses defaults)
+//   out_meta  - [OUT] Optional per-expert metadata written on the same stream.
+//               expert_token_counts         valid for any layout (unpadded counts).
+//               expert_token_counts_padded  valid only with EXPERT_MAJOR layout.
+//               expert_token_offsets        valid only with EXPERT_MAJOR layout.
+//               Set individual fields to NULL to skip. NULL = skip all.
+//   stream    - [IN]  CUDA stream
+//   use_fp8   - [IN]  Enable FP8 for dispatch (default: false)
 //
 // Returns: ncclResult_t error code
 
 ncclResult_t ncclEpCreateHandle(
-    ncclEpHandle_t* handle,
-    ncclEpGroup_t ep_group,
-    ncclNDTensor_t topk_idx,
-    const ncclNDTensor_t* local_tensors,
-    unsigned int num_local_tensors,
-    const ncclEpHandleConfig_t* config,  // Reserved, should be set to NULL
-    cudaStream_t stream,
-    bool use_fp8 = false
+    ncclEpHandle_t*              handle,
+    ncclEpGroup_t                ep_group,
+    ncclNDTensor_t               topk_idx,
+    const ncclEpHandleConfig*    config,
+    ncclEpDispatchMeta_t*        out_meta,    // NULL to skip
+    cudaStream_t                 stream,
+    bool                         use_fp8 = false
 );
 
 // Destroy an EP handle and release all associated resources.
@@ -193,62 +236,18 @@ ncclResult_t ncclEpHandleDestroy(
     ncclEpHandle_t handle
 );
 
-// Query the device bytes required for a handle's routing buffers.
+// Rebind topk_idx on an existing handle without reallocating buffers.
+//
+// Use this instead of destroying and recreating the handle when only the
+// routing (topk_idx) changes between iterations.  All buffers allocated
+// by ncclEpCreateHandle are reused.
 //
 // Arguments:
-//   ep_group  - [IN]  A valid EP group
-//   config    - [IN]  Reserved, must be NULL
-//   size_out  - [OUT] Required bytes for handle_mem
-//   num_topk  - [IN]  Required for LL (> 0); optional for HT
-//
-// Returns: ncclResult_t error code
-
-ncclResult_t ncclEpHandleMemSize(
-    ncclEpGroup_t               ep_group,
-    const ncclEpHandleConfig_t* config,
-    size_t*                     size_out,
-    int                         num_topk = -1
-);
-
-// Allocate handle buffers without performing any collective.
-// Call ncclEpUpdateHandle before the first ncclEpDispatch/ncclEpCombine.
-//
-// handle_mem == NULL:  NCCL EP allocates via alloc_fn; handle owns the memory.
-// handle_mem != NULL:  wraps caller-owned 1D ncclUint8 tensor (>= ncclEpHandleMemSize);
-//                      handle owns no memory; ncclEpHandleDestroy frees only the struct.
-//
-// Arguments:
-//   handle     - [OUT] Newly created handle
-//   ep_group   - [IN]  A valid EP group
-//   config     - [IN]  Reserved, must be NULL
-//   num_topk   - [IN]  Required for LL (> 0); optional for HT (default: -1)
-//   use_fp8    - [IN]  Enable FP8 dispatch (default: false)
-//   handle_mem - [IN]  NULL = internal alloc; non-NULL = caller-owned device buffer
-//
-// Returns: ncclResult_t error code
-
-ncclResult_t ncclEpInitHandle(
-    ncclEpHandle_t*             handle,
-    ncclEpGroup_t               ep_group,
-    const ncclEpHandleConfig_t* config,
-    int                         num_topk   = -1,
-    bool                        use_fp8    = false,
-    ncclNDTensor_t              handle_mem = nullptr
-);
-
-// Per-step collective: prepare the handle for the given top-k routing decisions.
-// Must be called after ncclEpInitHandle and before ncclEpDispatch.
-//
-// Arguments:
-//   handle             - [IN]  Handle from ncclEpInitHandle
-//   topk_idx           - [IN]  [num_tokens, top_k] int64
-//   local_tensors      - [IN/OUT, optional] Array of pointers to local tensors.
-//                         HT: accepts optional RECV_EXPERT_COUNTER tensor (1D, ncclInt32, size=num_local_experts)
-//                         with tag NCCL_EP_TENSOR_TAG_RECV_EXPERT_COUNTER_DEVICE.
-//                         Required when max_tokens_per_rank is NCCL_EP_AUTO.
-//                         LL mode: does not accept local tensors (num_local_tensors must be 0).
-//   num_local_tensors  - [IN]  Number of local tensors
-//   stream             - [IN]  CUDA stream
+//   handle              - [IN]  Existing EP handle (from ncclEpCreateHandle)
+//   topk_idx            - [IN]  New top-k index tensor (2D, ncclInt64, contiguous)
+//   local_tensors       - [IN/OUT, optional] Same semantics as ncclEpCreateHandle
+//   num_local_tensors   - [IN]  Number of local tensors
+//   stream              - [IN]  CUDA stream
 //
 // Returns: ncclResult_t error code
 
@@ -417,11 +416,16 @@ ncclResult_t ncclEpComplete(
     cudaStream_t stream
 );
 
-// Query the number of received tokens that will be received after a call to EP dispatch (HT mode only).
+// Query the number of received tokens after a call to EP dispatch (HT mode only).
+//
+// With NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR and non-zero alignment, the returned value
+// is the PADDED total across all experts (sum of aligned per-expert counts), which is
+// the correct size to allocate for the dispatch recv buffer.
+// With GPU-major layout (default) the value equals the unpadded token count.
 //
 // Arguments:
 //   handle           - [IN]   A valid EP handle.
-//   num_recv_tokens  - [OUT]  Pointer to int, will be set to the actual number of tokens expected to be received on this rank
+//   num_recv_tokens  - [OUT]  Padded total recv token count (use this to size recv buffers).
 //
 // Notes:
 //   - This API is only supported in HIGH_THROUGHPUT (HT) mode.

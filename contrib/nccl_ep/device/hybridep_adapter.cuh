@@ -252,6 +252,13 @@ void dense_to_sparse_prob_combine(
 // so we use a fixed dummy value for class instantiation.
 // Note: Caller must provide a pre-allocated scan temp buffer (see get_preprocessing_scan_tmp_size).
 // Also computes per-expert token counts for NCCL API compatibility when requested.
+// Run the AllGather preprocessing scan and — optionally — remap sparse_to_dense_map
+// to expert-major output layout in a single call.
+//
+// When alignment > 0, remaps sparse_to_dense_map from GPU-major to expert-major slots
+// using global_routing_map (allgathered; identical on every rank).
+// Also writes out_counts, out_offsets, and internal_offsets for the local rank.
+// alignment: per-expert zone size in tokens (0 = GPU-major/skip, 1 = no padding).
 void call_metadata_preprocessing(
     const uint8_t* global_routing_map,  // Already allgathered bitmap routing map
     int32_t* sparse_to_dense_map,       // Output: token→rank→position mapping
@@ -269,11 +276,22 @@ void call_metadata_preprocessing(
     int num_nodes,                      // Number of nodes (RDMA domain size)
     int num_ranks_per_node,             // Ranks per node (NVLink domain size, 1-8)
     int experts_per_rank,               // Experts per GPU
-    cudaStream_t stream);
+    cudaStream_t stream,
+    int64_t* internal_offsets = nullptr,  // [experts_per_rank] handle-owned buffer; mandatory for EXPERT_MAJOR
+    int64_t* out_counts = nullptr,        // nullable: write padded counts (EXPERT_MAJOR only)
+    int64_t* out_offsets = nullptr,       // nullable: write offsets (EXPERT_MAJOR only)
+    size_t alignment = 0,
+    void*  perm_scratch = nullptr,        // remap scratch; must be >= get_perm_table_scratch_size() when alignment > 0
+    size_t perm_scratch_bytes = 0,
+    int32_t* actual_counts_out = nullptr);  // nullable: overwrite with true per-expert dispatch counts
 
 // Returns required size in bytes for the scan temp buffer used by call_metadata_preprocessing.
 // Caller must allocate at least this many bytes and pass the pointer to call_metadata_preprocessing.
 size_t get_preprocessing_scan_tmp_size(int num_ranks_per_node);
+
+// Returns bytes needed for the remap scratch in call_metadata_preprocessing (EXPERT_MAJOR only).
+// ep_workspace must be at least this large; call from ncclEpCreateGroup where all params are known.
+size_t get_perm_table_scratch_size(int num_nodes, int max_tokens_per_rank, int num_ranks_per_node, int experts_per_rank);
 
 // ============================================================================
 // Memory region info structs for GIN
@@ -360,6 +378,18 @@ void call_dispatch(
     int num_nodes,              // Number of nodes (RDMA domain size)
     bool use_fp8,               // false = BF16 (uint16_t), true = FP8 (uint8_t)
     bool forward_dispatch,      // True for forward, false for backward
+    cudaStream_t stream);
+
+// Launch standalone zero-padding kernel on a separate stream (concurrent with dispatch).
+// Zeros alignment padding slots in the expert-major output buffer.
+void call_zero_padding(
+    void* local_buf,            // Expert output token buffer for local rank
+    const int32_t* actual_counts,     // [experts_per_rank] unpadded counts
+    const int64_t* zone_offsets,      // [experts_per_rank] zone start offsets
+    int experts_per_rank,
+    int alignment,              // per-expert zone alignment in tokens
+    int hidden_dim,
+    bool use_fp8,               // false = BF16, true = FP8
     cudaStream_t stream);
 
 // ============================================================================

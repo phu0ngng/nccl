@@ -273,7 +273,7 @@ int main(int argc, char* argv[])
   NCCLCHECK(ncclCommInitRank(&comm, nRanks, id, myRank));
 
   ncclEpGroup_t ep_group;
-  ncclEpGroupConfig_t config = {};
+  ncclEpGroupConfig_t config;
   config.version = 1;                                    // Structure version
   config.algorithm = algorithm;                          // Algorithm type (set by command line)
   config.num_experts = num_experts;
@@ -321,21 +321,9 @@ int main(int argc, char* argv[])
   NCCLCHECK(ncclEpTensorGetData(topk_idx, &topk_idx_data));
   CUDACHECK(cudaMemcpy(topk_idx_data, topk_idx_host, num_tokens * top_k * sizeof(int64_t), cudaMemcpyHostToDevice));
 
-  // Create recv_expert_counter host tensor for ncclEpCreateHandle (only when disable_max_tokens is true)
-  ncclNDTensor_t handle_local_tensors[1] = {nullptr};
-  unsigned int handle_num_local_tensors = 0;
-  ncclNDTensor_t handle_recv_expert_counter = nullptr;
-  if (disable_max_tokens) {
-    void* recv_counter_data;
-    CUDACHECK(cudaHostAlloc(&recv_counter_data, num_local_experts * sizeof(int), cudaHostAllocMapped));
-    NCCLCHECK(ncclEpTensorCreate(ep_group, &handle_recv_expert_counter, 1, ncclInt32, NCCL_EP_TENSOR_TAG_RECV_EXPERT_COUNTER_HOST, recv_counter_data, num_local_experts));
-    handle_local_tensors[0] = handle_recv_expert_counter;
-    handle_num_local_tensors = 1;
-  }
-
   printf("Rank %d: Testing ncclEpCreateHandle\n", myRank);
   ncclEpHandle_t ep_handle;
-  NCCLCHECK(ncclEpCreateHandle(&ep_handle, ep_group, topk_idx, handle_local_tensors, handle_num_local_tensors, nullptr, s));
+  NCCLCHECK(ncclEpCreateHandle(&ep_handle, ep_group, topk_idx, nullptr, nullptr, s));
   CUDACHECK(cudaStreamSynchronize(s));
 
   unsigned int num_recv_tokens = 0;
@@ -427,8 +415,7 @@ int main(int argc, char* argv[])
   CUDACHECK(cudaStreamSynchronize(s));
   // Read recv_count tensor to use for validation
   // LL mode: allocated and copied from device local_tensors[0]
-  // HT mode with disable_max_tokens: points to handle_local_tensors[0] (already host memory)
-  // HT mode without disable_max_tokens: nullptr (no validation available)
+  // HT mode: per-expert counts available via out_meta->expert_token_counts (not used for validation here)
   int *recv_count_host = nullptr;
   bool should_free_recv_count = false;
   if (algorithm == NCCL_EP_ALGO_LOW_LATENCY) {
@@ -437,10 +424,6 @@ int main(int argc, char* argv[])
     NCCLCHECK(ncclEpTensorGetData(local_tensors[0], &local_tensor0_data));
     CUDACHECK(cudaMemcpy(recv_count_host, local_tensor0_data, num_local_experts * sizeof(int), cudaMemcpyDeviceToHost));
     should_free_recv_count = true;
-  } else if (disable_max_tokens && handle_local_tensors[0] != nullptr) {
-    void* handle_local_tensor0_data;
-    NCCLCHECK(ncclEpTensorGetData(handle_local_tensors[0], &handle_local_tensor0_data));
-    recv_count_host = static_cast<int*>(handle_local_tensor0_data);
   }
 
   unsigned int recv_from_expert_start = (local_experts_start + num_experts - num_local_experts) % num_experts;
@@ -919,13 +902,6 @@ int main(int argc, char* argv[])
 
   delete[] topk_idx_host;
   ncclEpTensorDestroy(ep_group, topk_idx);
-  // Free recv_expert_counter host tensor (uses cudaFreeHost, not cudaFree) only if it was allocated
-  if (disable_max_tokens && handle_local_tensors[0] != nullptr) {
-    void* recv_counter_data;
-    ncclEpTensorGetData(handle_recv_expert_counter, &recv_counter_data);
-    cudaFreeHost(recv_counter_data);
-    ncclEpTensorDestroy(ep_group, handle_recv_expert_counter);
-  }
   ncclEpTensorDestroy(ep_group, inputs[0]);
   ncclEpTensorDestroy(ep_group, outputs[0]);
   if (algorithm != NCCL_EP_ALGO_LOW_LATENCY) {

@@ -320,12 +320,22 @@ void call_metadata_preprocessing(
     int num_nodes,
     int num_ranks_per_node,
     int experts_per_rank,
-    cudaStream_t stream
+    cudaStream_t stream,
+    int64_t* internal_offsets,
+    int64_t* out_counts,
+    int64_t* out_offsets,
+    size_t alignment,
+    void* perm_scratch,
+    size_t perm_scratch_bytes,
+    int32_t* actual_counts_out
 ) {
-    if (per_expert_token_counts != nullptr) {
-        // Fused scan path accumulates counts with atomicAdd.
-        CUDA_CHECK(cudaMemsetAsync(
-            per_expert_token_counts, 0, experts_per_rank * sizeof(int32_t), stream));
+    int32_t* counts = per_expert_token_counts;
+    if (alignment > 0 && counts == nullptr) {
+        EP_HOST_ASSERT(false && "EXPERT_MAJOR remap requires per_expert_token_counts != nullptr");
+    }
+
+    if (counts != nullptr) {
+        CUDA_CHECK(cudaMemsetAsync(counts, 0, experts_per_rank * sizeof(int32_t), stream));
     }
 
     // MNNVL configurations (> 32 GPUs per LSA domain) are not yet supported: the scan
@@ -346,13 +356,20 @@ void call_metadata_preprocessing(
                 token_rank_mask,
                 num_tokens_for_experts,
                 local_expert_routing_map,
-                per_expert_token_counts,
+                counts,
                 node_rank,
                 local_rank,
                 num_tokens_per_rank,
                 num_ranks_per_node,
                 experts_per_rank,
-                stream
+                stream,
+                internal_offsets,
+                out_counts,
+                out_offsets,
+                alignment,
+                perm_scratch,
+                perm_scratch_bytes,
+                actual_counts_out
             );
         });
     });
@@ -360,6 +377,40 @@ void call_metadata_preprocessing(
 
 size_t get_preprocessing_scan_tmp_size(int num_ranks_per_node) {
     return HYBRIDEP_NUM_BLOCKS_PREPROCESSING * num_ranks_per_node * sizeof(::hybrid_ep::tmp_state_t);
+}
+
+size_t get_perm_table_scratch_size(int num_nodes, int max_tokens_per_rank, int num_ranks_per_node, int experts_per_rank) {
+    const size_t total_global = static_cast<size_t>(num_nodes) * max_tokens_per_rank * num_ranks_per_node;
+    // Expanded perm: [num_ranks][max_perm_slots][experts_per_rank]
+    return static_cast<size_t>(num_ranks_per_node) * total_global * experts_per_rank * sizeof(int32_t);
+}
+
+// ============================================================================
+// Zero-padding kernel launcher
+// ============================================================================
+
+void call_zero_padding(
+    void* local_buf,
+    const int32_t* actual_counts,
+    const int64_t* zone_offsets,
+    int experts_per_rank,
+    int alignment,
+    int hidden_dim,
+    bool use_fp8,
+    cudaStream_t stream)
+{
+    const int grid_dim = experts_per_rank;
+    const int block_dim = 256;
+    if (use_fp8) {
+        hybrid_ep::zero_padding_kernel<uint8_t><<<grid_dim, block_dim, 0, stream>>>(
+            static_cast<uint8_t*>(local_buf), actual_counts, zone_offsets,
+            experts_per_rank, alignment, hidden_dim);
+    } else {
+        hybrid_ep::zero_padding_kernel<uint16_t><<<grid_dim, block_dim, 0, stream>>>(
+            static_cast<uint16_t*>(local_buf), actual_counts, zone_offsets,
+            experts_per_rank, alignment, hidden_dim);
+    }
+    CUDA_CHECK(cudaGetLastError());
 }
 
 // ============================================================================

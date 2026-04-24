@@ -936,13 +936,215 @@ ValidationResult validateDispatchOutput(
     int myRank,
     int nRanks,
     bool is_ht_mode,
-    ncclEpLayout_t layout
+    bool is_expert_major,
+    size_t expert_major_alignment,
+    const int64_t* meta_expert_counts_padded = nullptr,
+    const int64_t* meta_expert_offsets       = nullptr
 ) {
     if (is_ht_mode) {
-        return validateDispatchOutputHT(tensors, num_tokens, hidden, top_k,
-                                         num_experts, num_local_experts, myRank, nRanks);
+        ValidationResult result = {true, 0, 0.0, ""};
+        int errors = 0;
+        const int max_errors_to_print = 10;
+        int errors_printed = 0;
+        int64_t* src_topk = new int64_t[num_tokens * top_k];
+
+        // ==================== HT Mode ====================
+
+        const unsigned int* out0_sizes_ht; unsigned int out0_ndim_ht;
+        NCCLCHECK(ncclEpTensorGetSizes(tensors.outputs[0], &out0_sizes_ht, &out0_ndim_ht));
+        unsigned int buf_rows = out0_sizes_ht[0];
+        size_t recv_size = static_cast<size_t>(buf_rows) * hidden;
+        uint16_t* recv_data = new uint16_t[recv_size];
+        void* output0_data;
+        NCCLCHECK(ncclEpTensorGetData(tensors.outputs[0], &output0_data));
+        CUDACHECK(cudaMemcpy(recv_data, output0_data,
+                             recv_size * sizeof(uint16_t), cudaMemcpyDeviceToHost));
+
+        // Determine which output slots contain real tokens (not padding/unused).
+        // Expert-major layout: token zones are sorted by expert and padded to alignment.
+        //   recv_topk_idx is unreliable because local_expert_routing_map is GPU-major
+        //   indexed but the expert-major buffer is not — use per-expert counts/offsets
+        //   from dispatch meta instead.
+        // GPU-major layout: recv_topk_idx >= 0 correctly identifies valid slots.
+        // For expert-major with alignment: use expert_token_counts_padded + expert_token_offsets
+        // (the same combination verified by the DispatchMeta unit test) to mark every row
+        // within each expert's padded zone.  Zero-padding rows decode to rank=128 in
+        // extractTokenIdentity and are skipped automatically — no need for actual counts.
+        bool* valid_slot = new bool[buf_rows]();
+        if (is_expert_major && meta_expert_offsets != nullptr && meta_expert_counts_padded != nullptr) {
+            if (myRank == 0) {
+                printf("[META] buf_rows=%u num_local_experts=%u\n", buf_rows, num_local_experts);
+                for (unsigned int e = 0; e < num_local_experts; e++) {
+                    printf("[META] expert %u: offset=%ld padded_count=%ld\n",
+                           e, (long)meta_expert_offsets[e], (long)meta_expert_counts_padded[e]);
+                }
+                fflush(stdout);
+            }
+            for (unsigned int e = 0; e < num_local_experts; e++) {
+                int64_t start = meta_expert_offsets[e];
+                int64_t pcount = meta_expert_counts_padded[e];
+                for (int64_t s = 0; s < pcount; s++) {
+                    int64_t row = start + s;
+                    if (row >= 0 && static_cast<unsigned int>(row) < buf_rows)
+                        valid_slot[row] = true;
+                }
+            }
+        } else {
+            int64_t* recv_topk_idx = new int64_t[static_cast<size_t>(buf_rows) * top_k];
+            void* output2_data;
+            NCCLCHECK(ncclEpTensorGetData(tensors.outputs[2], &output2_data));
+            CUDACHECK(cudaMemcpy(recv_topk_idx, output2_data,
+                                 static_cast<size_t>(buf_rows) * top_k * sizeof(int64_t),
+                                 cudaMemcpyDeviceToHost));
+            for (unsigned int j = 0; j < buf_rows; j++) {
+                for (unsigned int k = 0; k < top_k; k++) {
+                    if (recv_topk_idx[j * top_k + k] >= 0) { valid_slot[j] = true; break; }
+                }
+            }
+            delete[] recv_topk_idx;
+        }
+
+        // Build expected set from deterministic routing
+        std::set<std::pair<int,int>> expected;
+        for (int r = 0; r < nRanks; r++) {
+            generateTopkIndicesHT(src_topk, num_tokens, num_experts, top_k, r);
+            for (unsigned int t = 0; t < num_tokens; t++) {
+                for (unsigned int k = 0; k < top_k; k++) {
+                    int64_t expert_id = src_topk[t * top_k + k];
+                    int expert_rank = static_cast<int>(expert_id) / static_cast<int>(num_local_experts);
+                    if (expert_rank == myRank) {
+                        expected.insert({r, static_cast<int>(t)});
+                        break;
+                    }
+                }
+            }
+        }
+
+        std::set<std::pair<int,int>> found;
+
+        for (unsigned int j = 0; j < buf_rows; j++) {
+            if (!valid_slot[j]) continue;
+
+            const uint16_t* row = recv_data + j * hidden;
+            int source_rank = -1, token_id = -1;
+
+            if (!extractTokenIdentity(row, hidden, nRanks, num_tokens, &source_rank, &token_id)) {
+                // In expert-major+meta mode, valid_slot covers the full padded zone including
+                // zero-padding rows.  Zero-padding slots decode to rank=128 (out of range) and
+                // should be silently skipped; any real token that failed to arrive will show up
+                // as a "missing token" below.  In GPU-major mode (no meta), every marked slot
+                // must have a real token, so treat it as an error.
+                if (meta_expert_offsets == nullptr) {
+                    if (errors_printed < max_errors_to_print) {
+                        printf("[Rank %d] HT dispatch: slot %u: invalid identity (rank=%d, token=%d)\n",
+                               myRank, j, source_rank, token_id);
+                        errors_printed++;
+                    }
+                    errors++;
+                }
+                continue;
+            }
+
+            if (!verifyTokenIntegrity(row, hidden)) {
+                if (errors_printed < max_errors_to_print) {
+                    printf("[Rank %d] HT dispatch: slot %u: data corruption (rank=%d, token=%d)\n",
+                           myRank, j, source_rank, token_id);
+                    errors_printed++;
+                }
+                errors++;
+            }
+
+            auto key = std::make_pair(source_rank, token_id);
+            if (expected.find(key) == expected.end()) {
+                if (errors_printed < max_errors_to_print) {
+                    printf("[Rank %d] HT dispatch: slot %u: unexpected token (rank=%d, token=%d)\n",
+                           myRank, j, source_rank, token_id);
+                    errors_printed++;
+                }
+                errors++;
+            }
+            found.insert(key);
+        }
+
+        // Check for missing tokens
+        for (const auto& key : expected) {
+            if (found.find(key) == found.end()) {
+                if (errors_printed < max_errors_to_print) {
+                    printf("[Rank %d] HT dispatch: missing token (rank=%d, token=%d)\n",
+                           myRank, key.first, key.second);
+                    errors_printed++;
+                }
+                errors++;
+            }
+        }
+
+        // Expert-major: verify LCP warp correctness using dispatch meta zone boundaries.
+        // Phase A: every non-decodable (padding) slot must be all-zero.
+        // Phase B: any token that appears in multiple expert zones must be data-identical.
+        if (is_expert_major && meta_expert_offsets != nullptr && meta_expert_counts_padded != nullptr) {
+            using TokenKey = std::pair<int, int>;
+            std::map<TokenKey, std::vector<std::pair<unsigned int, int64_t>>> locs;
+
+            for (unsigned int e = 0; e < num_local_experts; e++) {
+                int64_t off = meta_expert_offsets[e];
+                int64_t cnt = meta_expert_counts_padded[e];
+                for (int64_t s = 0; s < cnt; s++) {
+                    const uint16_t* row = recv_data + (off + s) * hidden;
+                    int src_rank = -1, tok_id = -1;
+                    if (!extractTokenIdentity(row, hidden, nRanks, num_tokens, &src_rank, &tok_id)) {
+                        // Phase A: padding slot must be all-zero.
+                        for (unsigned int h = 0; h < hidden; h++) {
+                            if (row[h] != 0) {
+                                if (errors_printed < max_errors_to_print) {
+                                    printf("[Rank %d] HT dispatch: expert %u pad slot %ld: non-zero at h=%u (0x%04x)\n",
+                                           myRank, e, (long)s, h, row[h]);
+                                    errors_printed++;
+                                }
+                                errors++;
+                                break;
+                            }
+                        }
+                        continue;
+                    }
+                    locs[{src_rank, tok_id}].push_back({e, s});
+                }
+            }
+
+            // Phase B: duplicated tokens must be data-identical across all expert zones.
+            for (const auto& kv : locs) {
+                if (kv.second.size() < 2) continue;
+                const auto& ref = kv.second[0];
+                const uint16_t* base = recv_data + (meta_expert_offsets[ref.first] + ref.second) * hidden;
+                for (size_t i = 1; i < kv.second.size(); i++) {
+                    const auto& loc = kv.second[i];
+                    const uint16_t* cmp = recv_data + (meta_expert_offsets[loc.first] + loc.second) * hidden;
+                    if (memcmp(base, cmp, hidden * sizeof(uint16_t)) != 0) {
+                        if (errors_printed < max_errors_to_print) {
+                            printf("[Rank %d] HT dispatch: dup-zone mismatch token (src=%d tok=%d) E%u[%ld]!=E%u[%ld]\n",
+                                   myRank, kv.first.first, kv.first.second,
+                                   ref.first, (long)ref.second, loc.first, (long)loc.second);
+                            errors_printed++;
+                        }
+                        errors++;
+                    }
+                }
+            }
+        }
+
+        delete[] valid_slot;
+        delete[] recv_data;
+        delete[] src_topk;
+
+        result.errors = errors;
+        result.passed = (errors == 0);
+        if (!result.passed) {
+            char buf[256];
+            snprintf(buf, sizeof(buf), "HT dispatch validation: %d errors", errors);
+            result.message = buf;
+        }
+        return result;
     } else {
-        if (layout == NCCL_EP_LAYOUT_EXPERT_MAJOR) {
+        if (is_expert_major) {
             return validateDispatchOutputLLExpertMaj(tensors, num_tokens, hidden, top_k,
                                                        num_experts, num_local_experts, myRank, nRanks);
         } else {
@@ -951,6 +1153,7 @@ ValidationResult validateDispatchOutput(
         }
     }
 }
+
 
 // Compute is_token_in_rank.sum() - count of unique ranks each token is sent to
 // This matches DeepEP's validation approach
@@ -1086,8 +1289,8 @@ ValidationResult validateCombineOutputLL(
 }
 
 // Validate combine output for High Throughput mode
-// DeepEP formula: check = combined / is_token_in_rank.sum()
-// HT combine is unweighted sum: combined[t] = x[t] * num_unique_ranks
+// GPU-major:    combined[t] = x[t] * num_unique_ranks  (one slot per dest rank)
+// Expert-major: combined[t] = x[t] * num_valid_experts (one slot per expert, S2G-driven dup)
 // Compared using calc_diff in double precision with threshold 5e-6
 ValidationResult validateCombineOutputHT(
     BenchmarkTensors& tensors,
@@ -1097,7 +1300,8 @@ ValidationResult validateCombineOutputHT(
     unsigned int top_k,
     int myRank,
     int nRanks,
-    int64_t* topk_idx_host
+    int64_t* topk_idx_host,
+    bool expert_major
 ) {
     ValidationResult result = {true, 0, 0.0, ""};
 
@@ -1110,6 +1314,8 @@ ValidationResult validateCombineOutputHT(
                              output_size * sizeof(uint16_t), cudaMemcpyDeviceToHost));
     }
 
+    // GPU-major: one dispatch slot per destination rank → scale by unique ranks.
+    // Expert-major: one dispatch slot per expert (S2G-driven dup) → scale by valid experts.
     int* unique_ranks = countUniqueRanksPerToken(topk_idx_host, num_tokens,
                                                   num_experts, top_k, nRanks);
 
@@ -1117,7 +1323,9 @@ ValidationResult validateCombineOutputHT(
 
     size_t num_elements = 0;
     for (unsigned int t = 0; t < num_tokens; t++) {
-        if (unique_ranks[t] > 0) num_elements += hidden;
+        int nr = expert_major ? countValidExperts(topk_idx_host, t, top_k)
+                              : unique_ranks[t];
+        if (nr > 0) num_elements += hidden;
     }
 
     double* ref = new double[num_elements];
@@ -1126,7 +1334,8 @@ ValidationResult validateCombineOutputHT(
 
     bool has_nan = false;
     for (unsigned int t = 0; t < num_tokens; t++) {
-        int nr = unique_ranks[t];
+        int nr = expert_major ? countValidExperts(topk_idx_host, t, top_k)
+                              : unique_ranks[t];
         if (nr == 0) continue;
 
         double rank_val = static_cast<double>(original_rank_val);
@@ -1178,11 +1387,13 @@ ValidationResult validateCombineOutput(
     int myRank,
     int nRanks,
     bool is_ht_mode,
-    int64_t* topk_idx_host
+    int64_t* topk_idx_host,
+    bool expert_major = false
 ) {
     if (is_ht_mode) {
         return validateCombineOutputHT(tensors, num_tokens, hidden, num_experts,
-                                        top_k, myRank, nRanks, topk_idx_host);
+                                        top_k, myRank, nRanks, topk_idx_host,
+                                        expert_major);
     } else {
         return validateCombineOutputLL(tensors, num_tokens, hidden, num_experts,
                                         top_k, myRank, nRanks, topk_idx_host);
@@ -1813,11 +2024,14 @@ void printUsage(const char* programName, int myRank) {
         printf("  --warmup <num>          Warmup iterations (default: 10)\n");
         printf("  --iters <num>           Benchmark iterations (default: 50)\n");
         printf("  --use-fp8               Use FP8 for dispatch (default: BF16)\n");
-        printf("  --user-handle-mem       Use caller-owned buffer via ncclEpInitHandle+ncclEpUpdateHandle\n");
         printf("  --profile               Enable NVTX profiling mode (use with nsys)\n");
         printf("  --disable-nvlink        Disable NVLink, force RDMA for intranode communication (LL only)\n");
         printf("  --validate              Validate dispatch/combine data correctness\n");
+        printf("  --dispatch-only         With --validate, run and validate dispatch only (skip combine)\n");
         printf("  --dynamic-tokens        Enable dynamic token allocation (HT only, required for random topk)\n");
+        printf("  --expert-sort           Expert-major dispatch output layout (tokens grouped by expert, HT only)\n");
+        printf("  --expert-sort-align <N> Expert-major layout with per-expert zone aligned to N tokens (implies --expert-sort)\n");
+        printf("  --em-overalloc <N>      Expert-major IPC buffer overalloc factor in %% (default: 250 = 2.5x)\n");
         printf("  --help                  Show this help message\n");
     }
 }
@@ -1838,10 +2052,12 @@ int main(int argc, char* argv[]) {
     bool profile_mode = false;  // Enable NVTX profiling with nsys
     bool disable_nvlink = false;  // Force RDMA instead of NVLink
     bool use_fp8 = false;  // Use FP8 for dispatch (default: BF16)
-    bool user_handle_mem = false;  // Use caller-owned buffer via ncclEpInitHandle+ncclEpUpdateHandle
     bool validate_data = false;  // Validate dispatch/combine correctness
+    bool dispatch_only = false;  // Skip combine run and validation (use with --validate)
     bool dynamic_tokens = false;  // Enable dynamic token allocation (HT only, for random topk)
-
+    ncclEpOutputLayout_t output_layout = NCCL_EP_OUTPUT_LAYOUT_GPU_MAJOR;
+    size_t expert_sort_alignment = 0;  // 0 = no padding; >1 aligns each expert zone
+    unsigned int em_overalloc = 0;    // 0 = default (250 = 2.5x); fixed-point 0.01 units
     // Initialize MPI
     MPICHECK(MPI_Init(&argc, &argv));
     MPICHECK(MPI_Comm_rank(MPI_COMM_WORLD, &myRank));
@@ -1860,16 +2076,19 @@ int main(int argc, char* argv[]) {
         {"profile",        no_argument,       0, 'p'},
         {"disable-nvlink", no_argument,       0, 'n'},
         {"use-fp8",        no_argument,       0, 'f'},
-        {"user-handle-mem",no_argument,       0, 'U'},
         {"validate",       no_argument,       0, 'V'},
+        {"dispatch-only",  no_argument,       0, 'D'},
         {"dynamic-tokens", no_argument,       0, 'M'},
+        {"expert-sort",    no_argument,       0, 'S'},
+        {"expert-sort-align", required_argument, 0, 'A'},
+        {"em-overalloc",   required_argument, 0, 'O'},
         {"help",           no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
 
     int opt;
     int option_index = 0;
-    while ((opt = getopt_long(argc, argv, "a:L:t:d:k:e:w:i:pnfUVMh", long_options, &option_index)) != -1) {
+    while ((opt = getopt_long(argc, argv, "a:t:d:k:e:w:i:pnfVDMSA:h", long_options, &option_index)) != -1) {
         switch (opt) {
             case 'a':
                 if (strcmp(optarg, "ll") == 0 || strcmp(optarg, "low-latency") == 0) {
@@ -1925,14 +2144,24 @@ int main(int argc, char* argv[]) {
             case 'f':
                 use_fp8 = true;
                 break;
-            case 'U':
-                user_handle_mem = true;
-                break;
             case 'V':
                 validate_data = true;
                 break;
+            case 'D':
+                dispatch_only = true;
+                break;
             case 'M':
                 dynamic_tokens = true;
+                break;
+            case 'S':
+                output_layout = NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR;
+                break;
+            case 'A':
+                output_layout = NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR;
+                expert_sort_alignment = static_cast<size_t>(atoi(optarg));
+                break;
+            case 'O':
+                em_overalloc = static_cast<unsigned int>(atoi(optarg));
                 break;
             case 'h':
                 printUsage(argv[0], myRank);
@@ -2034,6 +2263,15 @@ int main(int argc, char* argv[]) {
 #else
         printf("  CUPTI:           not available (kernel timing will report 0; ensure CUDA Toolkit with CUPTI headers is installed)\n");
 #endif
+        if (algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT) {
+            const char* layout_str =
+                (output_layout == NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR)
+                    ? (expert_sort_alignment > 0 ? "expert-major (with alignment)" : "expert-major")
+                    : "gpu-major";
+            printf("  Output layout:   %s\n", layout_str);
+            if (expert_sort_alignment > 0)
+                printf("  Align (tokens):  %zu\n", expert_sort_alignment);
+        }
         printf("\n");
     }
 
@@ -2059,7 +2297,6 @@ int main(int argc, char* argv[]) {
     NCCLCHECK(ncclCommInitRank(&comm, nRanks, id, myRank));
 
     // Create EP group
-    if (myRank == 0) { printf("[DEBUG] Creating EP group...\n"); fflush(stdout); }
     ncclEpGroup_t ep_group;
     ncclEpGroupConfig_t config;
     config.version = 1;
@@ -2076,6 +2313,7 @@ int main(int argc, char* argv[]) {
     // num_qp_per_rank: LL mode requires >= num_local_experts, HT mode uses auto
     config.num_qp_per_rank = (algorithm == NCCL_EP_ALGO_LOW_LATENCY) ? num_local_experts : NCCL_EP_AUTO;
     config.num_channels = NCCL_EP_AUTO;
+    config.expert_major_overalloc = em_overalloc;  // 0 = default (250 = 2.5x)
 
     printf("Rank %d: Testing ncclEpCreateGroup with algorithm: %s\n", myRank,
            (algorithm == NCCL_EP_ALGO_LOW_LATENCY) ? "LOW_LATENCY" : "HIGH_THROUGHPUT");
@@ -2138,73 +2376,84 @@ int main(int argc, char* argv[]) {
     }
     // Note: topk_idx_host is kept for validation, deleted at end
 
-    // Create recv_expert_counter tensor for dynamic token allocation (HT + dynamic mode)
-    ncclNDTensor_t recv_expert_counter_tensor = nullptr;
-    if (dynamic_tokens) {
-        void* recv_expert_counter_data;
-        CUDACHECK(cudaHostAlloc(&recv_expert_counter_data, num_local_experts * sizeof(int), cudaHostAllocMapped));
-        NCCLCHECK(ncclEpTensorCreate(ep_group, &recv_expert_counter_tensor, 1, ncclInt32,
-                                     NCCL_EP_TENSOR_TAG_RECV_EXPERT_COUNTER_HOST, recv_expert_counter_data, num_local_experts));
-    }
-
     // Create handle
-    ncclNDTensor_t handle_local_tensors[1] = { recv_expert_counter_tensor };
-    unsigned int handle_num_local_tensors = recv_expert_counter_tensor ? 1 : 0;
+    printf("Rank %d: Testing ncclEpCreateHandle\n", myRank);
+    ncclEpHandle_t ep_handle;
 
-    // Optional caller-owned buffer (--user-handle-mem)
-    void* handle_user_buf = nullptr;
-    ncclNDTensor_t handle_mem_tensor = nullptr;
-    if (user_handle_mem) {
-        size_t handle_mem_size;
-        NCCLCHECK(ncclEpHandleMemSize(ep_group, nullptr, &handle_mem_size, static_cast<int>(top_k)));
-        CUDACHECK(cudaMalloc(&handle_user_buf, handle_mem_size));
-        NCCLCHECK(ncclEpTensorCreate(ep_group, &handle_mem_tensor, 1, ncclUint8,
-                                     NCCL_EP_TENSOR_TAG_NONE, handle_user_buf,
-                                     static_cast<unsigned int>(handle_mem_size)));
-        if (myRank == 0)
-            printf("Rank 0: ncclEpHandleMemSize = %zu bytes\n", handle_mem_size);
+    ncclEpHandleConfig handle_cfg{};
+    handle_cfg.dispatch_output_layout               = output_layout;
+    handle_cfg.dispatch_output_per_expert_alignment = expert_sort_alignment;
+    // zero_padding_mode defaults to ENABLE (0) via zero-init of handle_cfg above.
+    const ncclEpHandleConfig* cfg_ptr =
+        (output_layout == NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR) ? &handle_cfg : nullptr;
+
+    // For expert-major + validation: collect per-expert counts/offsets from handle creation
+    // so validateDispatchOutput can identify real vs padding slots without using
+    // recv_topk_idx (which is unreliable for expert-major due to GPU-major indexed routing map).
+    ncclNDTensor_t meta_counts_tensor  = nullptr;
+    ncclNDTensor_t meta_offsets_tensor = nullptr;
+    int64_t* dispatch_meta_counts_host  = nullptr;
+    int64_t* dispatch_meta_offsets_host = nullptr;
+    ncclEpDispatchMeta_t dispatch_meta = {};
+
+    // Use expert_token_counts_padded + expert_token_offsets — the same pair verified by the
+    // DispatchMeta unit test.  Only needed for expert-major with alignment > 1 (no padding
+    // means recv_topk_idx suffices).
+    // Dispatch meta (expert_token_offsets + expert_token_counts_padded) is needed whenever
+    // we validate expert-major output: used both for valid-slot detection (alignment > 1)
+    // and for the dup-zone check (tokens routed to multiple local experts).
+    bool need_dispatch_meta = (algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT &&
+                               output_layout == NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR &&
+                               validate_data);
+    if (need_dispatch_meta) {
+        NCCLCHECK(ncclEpTensorCreate(ep_group, &meta_counts_tensor, 1, ncclInt64,
+                                     NCCL_EP_TENSOR_TAG_NONE, nullptr, num_local_experts));
+        NCCLCHECK(ncclEpTensorCreate(ep_group, &meta_offsets_tensor, 1, ncclInt64,
+                                     NCCL_EP_TENSOR_TAG_NONE, nullptr, num_local_experts));
+        dispatch_meta.expert_token_counts_padded = meta_counts_tensor;
+        dispatch_meta.expert_token_offsets       = meta_offsets_tensor;
     }
 
-    ncclEpHandle_t ep_handle;
     MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
     double handle_create_start = MPI_Wtime();
-    if (user_handle_mem) {
-        NCCLCHECK(ncclEpInitHandle(&ep_handle, ep_group, nullptr, static_cast<int>(top_k), use_fp8, handle_mem_tensor));
-        NCCLCHECK(ncclEpUpdateHandle(ep_handle, topk_idx, handle_local_tensors, handle_num_local_tensors, stream));
-    } else {
-        NCCLCHECK(ncclEpCreateHandle(&ep_handle, ep_group, topk_idx, handle_local_tensors, handle_num_local_tensors, nullptr, stream, use_fp8));
-    }
+    NCCLCHECK(ncclEpCreateHandle(&ep_handle, ep_group, topk_idx, cfg_ptr,
+                                  need_dispatch_meta ? &dispatch_meta : nullptr, stream, use_fp8));
     CUDACHECK(cudaStreamSynchronize(stream));
     double handle_create_end = MPI_Wtime();
     double handle_create_ms = (handle_create_end - handle_create_start) * 1000.0;
-    printf("Rank %d: handle creation took %.2f ms\n", myRank, handle_create_ms);
+    printf("Rank %d: ncclEpCreateHandle took %.2f ms\n", myRank, handle_create_ms);
+
+    if (need_dispatch_meta) {
+        dispatch_meta_counts_host  = new int64_t[num_local_experts];
+        dispatch_meta_offsets_host = new int64_t[num_local_experts];
+        void* d_counts;  NCCLCHECK(ncclEpTensorGetData(meta_counts_tensor,  &d_counts));
+        void* d_offsets; NCCLCHECK(ncclEpTensorGetData(meta_offsets_tensor, &d_offsets));
+        CUDACHECK(cudaMemcpy(dispatch_meta_counts_host, d_counts,
+                             num_local_experts * sizeof(int64_t), cudaMemcpyDeviceToHost));
+        CUDACHECK(cudaMemcpy(dispatch_meta_offsets_host, d_offsets,
+                             num_local_experts * sizeof(int64_t), cudaMemcpyDeviceToHost));
+    }
 
     // max_tokens_per_rank is the per-rank dispatch count.
     // num_recv_tokens is the max tokens this rank can receive (nRanks * max_tokens_per_rank).
     unsigned int num_recv_tokens = 0;
     if (dynamic_tokens) {
         NCCLCHECK(ncclEpHandleGetNumRecvTokens(ep_handle, &num_recv_tokens));
-        if (myRank == 0) {
-            printf("[DEBUG] Dynamic tokens: num_recv_tokens=%u\n", num_recv_tokens);
-            fflush(stdout);
-        }
     } else {
         num_recv_tokens = config.max_tokens_per_rank * nRanks;
+        // Expert-major layout: same-rank multi-expert tokens are duplicated across
+        // expert zones, so total recv tokens can exceed max_tokens_per_rank * nRanks.
+        // Use the same overalloc factor as the IPC buffer in the library.
+        if (output_layout == NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR) {
+            unsigned int pct = em_overalloc ? em_overalloc : 250u;
+            num_recv_tokens = (static_cast<size_t>(config.max_tokens_per_rank) * nRanks * pct + 99) / 100;
+        }
     }
     assert(num_recv_tokens);
-
-    // HT recv bytes are pre-computed in calculateHighThroughputBytes via routing simulation
-    if (algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT && myRank == 0) {
-        printf("[DEBUG] HT bytes: send=%u tokens, rdma_send=%u, total_recv=%u tokens, rdma_recv=%u (buffer=%u)\n",
-               ht_bytes.total_send_tokens, ht_bytes.rdma_send_tokens,
-               ht_bytes.total_recv_tokens, ht_bytes.rdma_recv_tokens, num_recv_tokens);
-        fflush(stdout);
-    }
 
     // Setup benchmark tensors based on algorithm mode
     BenchmarkTensors tensors = {};
 
-    if (myRank == 0) { printf("[DEBUG] Setting up tensors...\n"); fflush(stdout); }
     if (algorithm == NCCL_EP_ALGO_LOW_LATENCY) {
         setupLowLatencyTensors(ep_group, tensors, topk_idx, num_tokens, hidden, top_k,
                                num_local_experts, config.max_tokens_per_rank, nRanks, config.layout);
@@ -2212,14 +2461,11 @@ int main(int argc, char* argv[]) {
         setupHighThroughputTensors(ep_group, tensors, topk_idx, num_tokens, hidden, top_k,
                                    num_local_experts, num_recv_tokens);
     }
-    if (myRank == 0) { printf("[DEBUG] Tensors set up\n"); fflush(stdout); }
 
     // Initialize validation data if enabled (fills tensors with rank-based patterns)
     if (validate_data) {
-        if (myRank == 0) { printf("[DEBUG] Initializing validation data...\n"); fflush(stdout); }
         initializeValidationData(tensors, num_tokens, hidden, top_k, myRank,
                                  algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT);
-        if (myRank == 0) { printf("[DEBUG] Validation data initialized\n"); fflush(stdout); }
     }
 
     ncclEpDispatchConfig_t dispatch_config;
@@ -2254,8 +2500,6 @@ int main(int argc, char* argv[]) {
                tensors.num_combine_inputs, tensors.num_combine_outputs, tensors.num_combine_local_tensors);
         fflush(stdout);
     }
-    if (myRank == 0) { printf("[DEBUG] Starting benchmark...\n"); fflush(stdout); }
-
     // HT mode: 0 local tensors, LL mode: 1 local tensor (tokens_per_experts)
     int num_dispatch_local_tensors = (algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT) ? 0 : 1;
 
@@ -2300,14 +2544,8 @@ int main(int argc, char* argv[]) {
     if (profile_mode) {
         auto handle_create_fn = [&]() {
             NCCLCHECK(ncclEpHandleDestroy(ep_handle));
-            if (user_handle_mem) {
-                NCCLCHECK(ncclEpInitHandle(&ep_handle, ep_group, nullptr, static_cast<int>(top_k), use_fp8, handle_mem_tensor));
-                NCCLCHECK(ncclEpUpdateHandle(ep_handle, topk_idx, handle_local_tensors, handle_num_local_tensors, stream));
-            } else {
-                NCCLCHECK(ncclEpCreateHandle(&ep_handle, ep_group, topk_idx,
-                                              handle_local_tensors, handle_num_local_tensors,
-                                              nullptr, stream, use_fp8));
-            }
+            NCCLCHECK(ncclEpCreateHandle(&ep_handle, ep_group, topk_idx,
+                                          cfg_ptr, nullptr, stream, use_fp8));
         };
         runNvtxProfiling(myRank, actual_iters, dispatch_fn, combine_fn, handle_create_fn, stream);
     }
@@ -2381,7 +2619,7 @@ int main(int argc, char* argv[]) {
             printf("\n=== Setup Timing (across %d ranks) ===\n", nRanks);
             printf("ncclEpCreateGroup:   avg=%.2f ms, min=%.2f ms, max=%.2f ms\n",
                    global_group_avg, global_group_min, global_group_max);
-            printf("Handle creation:     avg=%.2f ms, min=%.2f ms, max=%.2f ms\n",
+            printf("ncclEpCreateHandle:  avg=%.2f ms, min=%.2f ms, max=%.2f ms\n",
                    global_handle_avg, global_handle_min, global_handle_max);
         }
     }
@@ -2404,16 +2642,19 @@ int main(int argc, char* argv[]) {
 
         ValidationResult dispatch_valid = validateDispatchOutput(
             tensors, num_tokens, hidden, top_k, num_experts, num_local_experts, myRank, nRanks,
-            algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT, config.layout);
+            algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT,
+            output_layout == NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR,
+            expert_sort_alignment,
+            dispatch_meta_counts_host,
+            dispatch_meta_offsets_host);
 
-        // Copy dispatch output to combine input (simulating expert processing)
-        // In real usage, expert FFN processing would happen here
-        // For validation, we just pass through the received tokens
-        {
-            void* eo_data;
-            void* output0_data;
-            NCCLCHECK(ncclEpTensorGetData(tensors.expert_outputs, &eo_data));
-            NCCLCHECK(ncclEpTensorGetData(tensors.outputs[0], &output0_data));
+        if (!dispatch_only) {
+            // Copy dispatch output to combine input (simulating expert processing)
+            {
+                void* eo_data;
+                void* output0_data;
+                NCCLCHECK(ncclEpTensorGetData(tensors.expert_outputs, &eo_data));
+                NCCLCHECK(ncclEpTensorGetData(tensors.outputs[0], &output0_data));
 
             if (algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT) {
                 // HT: 2D [num_recv_tokens, hidden]
@@ -2434,17 +2675,22 @@ int main(int argc, char* argv[]) {
                 size_t data_size = out0_sizes[0] * out0_sizes[1] * sizeof(uint16_t);
                 CUDACHECK(cudaMemcpy(eo_data, output0_data, data_size, cudaMemcpyDeviceToDevice));
             }
+
+            // Run combine
+            combine_fn();
+            CUDACHECK(cudaStreamSynchronize(stream));
+            MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
         }
+        }  // if (!dispatch_only) — copy + combine
 
-        // Run combine
-        combine_fn();
-        CUDACHECK(cudaStreamSynchronize(stream));
-        MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
-
-        // Validate combine output
-        ValidationResult combine_valid = validateCombineOutput(
-            tensors, num_tokens, hidden, top_k, num_experts, myRank, nRanks,
-            algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT, topk_idx_host);
+        // Validate combine output (skipped in dispatch-only mode)
+        ValidationResult combine_valid = {true, 0, 0.0, "skipped (dispatch-only)"};
+        if (!dispatch_only) {
+            combine_valid = validateCombineOutput(
+                tensors, num_tokens, hidden, top_k, num_experts, myRank, nRanks,
+                algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT, topk_idx_host,
+                output_layout == NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR);
+        }
 
         // Print validation results (rank 0 only to avoid clutter)
         if (myRank == 0) {
@@ -2454,48 +2700,48 @@ int main(int argc, char* argv[]) {
             }
             printf("\n");
 
-            printf("Combine validation:  %s", combine_valid.passed ? "PASSED" : "FAILED");
-            if (!combine_valid.passed) {
-                printf(" (%s)", combine_valid.message.c_str());
+            if (!dispatch_only) {
+                printf("Combine validation:  %s", combine_valid.passed ? "PASSED" : "FAILED");
+                if (!combine_valid.passed) {
+                    printf(" (%s)", combine_valid.message.c_str());
+                }
+                printf(" (calc_diff=%.6e)\n", combine_valid.max_diff);
             }
-            printf(" (calc_diff=%.6e)\n", combine_valid.max_diff);
             fflush(stdout);
         }
 
         // Collect validation results across all ranks
         int local_dispatch_pass = dispatch_valid.passed ? 1 : 0;
-        int local_combine_pass = combine_valid.passed ? 1 : 0;
+        int local_combine_pass  = combine_valid.passed  ? 1 : 0;
         int global_dispatch_pass, global_combine_pass;
 
         MPICHECK(MPI_Allreduce(&local_dispatch_pass, &global_dispatch_pass, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD));
-        MPICHECK(MPI_Allreduce(&local_combine_pass, &global_combine_pass, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD));
+        MPICHECK(MPI_Allreduce(&local_combine_pass,  &global_combine_pass,  1, MPI_INT, MPI_MIN, MPI_COMM_WORLD));
 
         if (myRank == 0) {
-            printf("\nGlobal validation: Dispatch=%s, Combine=%s\n",
-                   global_dispatch_pass ? "PASSED" : "FAILED",
-                   global_combine_pass ? "PASSED" : "FAILED");
+            if (dispatch_only) {
+                printf("\nGlobal validation: Dispatch=%s\n",
+                       global_dispatch_pass ? "PASSED" : "FAILED");
+            } else {
+                printf("\nGlobal validation: Dispatch=%s, Combine=%s\n",
+                       global_dispatch_pass ? "PASSED" : "FAILED",
+                       global_combine_pass  ? "PASSED" : "FAILED");
+            }
             fflush(stdout);
         }
     }
+
+    // Cleanup dispatch meta tensors
+    if (meta_counts_tensor)  NCCLCHECK(ncclEpTensorDestroy(ep_group, meta_counts_tensor));
+    if (meta_offsets_tensor) NCCLCHECK(ncclEpTensorDestroy(ep_group, meta_offsets_tensor));
+    delete[] dispatch_meta_counts_host;
+    delete[] dispatch_meta_offsets_host;
 
     // Cleanup (order matters: tensors -> handle -> group -> comm)
     cleanupBenchmarkTensors(ep_group, tensors, topk_idx);
     delete[] topk_idx_host;  // Now safe to delete after validation
 
     NCCLCHECK(ncclEpHandleDestroy(ep_handle));
-
-    if (handle_mem_tensor != nullptr)
-        ncclEpTensorDestroy(ep_group, handle_mem_tensor);
-    if (handle_user_buf != nullptr)
-        CUDACHECK(cudaFree(handle_user_buf));
-
-    // Cleanup recv_expert_counter if allocated (must be before group destroy)
-    if (dynamic_tokens && recv_expert_counter_tensor != nullptr) {
-        void* rec_data;
-        ncclEpTensorGetData(recv_expert_counter_tensor, &rec_data);
-        if (rec_data) cudaFreeHost(rec_data);
-        ncclEpTensorDestroy(ep_group, recv_expert_counter_tensor);
-    }
 
     NCCLCHECK(ncclEpGroupDestroy(ep_group, stream));
     ncclCommDestroy(comm);
