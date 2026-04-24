@@ -9,7 +9,7 @@
 bindings/ir
 bindings/nccl4py
 cmake/NCCLConfig.cmake.in
-contrib/nccl_ep
+contrib
 docs/examples
 makefiles
 pkg
