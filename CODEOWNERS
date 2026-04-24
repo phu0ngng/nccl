@@ -13,7 +13,7 @@ src/collectives.cc @zhenhaoh @jbachan @kiskra
 src/debug.cc @daddison @msantesson
 src/dev_runtime.cc @kiskra @jbachan
 src/devcomm/ @kiskra @bhramesh
-src/device/ @kiskra @jbachan @kgioioso
+src/device/ @kiskra @jbachan
 src/enqueue.cc @jbachan @kouyang @zhenhaoh
 src/generate_header.cmake @udeodhar
 src/gin/ @kgioioso @kiskra
@@ -38,6 +38,15 @@ src/scheduler/ @kouyang @kiskra @jbachan
 src/sym_kernels.cc @kiskra @kouyang
 src/transport/ @daddison
 src/transport.cc @kouyang @daddison
+
+^[GIN] @sjeaugey @kgioioso @kiskra @jbachan
+src/include/gin
+src/include/nccl_device
+src/include/plugin/gin
+src/dev_runtime.cc
+src/transport/net_ib/gin.cc
+src/transport/net_ib/gin.h
+src/transport/net_ib/gdaki
 
 ^[DevOps] @kartiki @jskrobola @chricao
 docker/
