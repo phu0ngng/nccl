@@ -441,7 +441,7 @@ static ncclResult_t init_hybridep_intranode(ncclEpGroup_t ep_group,
         mega_sz,
         &ep_group->ht_buffers.intranode_mega_window,
         NCCL_WIN_COLL_SYMMETRIC));
-    
+
     // Register the completion flags
     NCCL_CHECK_RESULT(ncclCommWindowRegister(
         comm,
@@ -1498,8 +1498,6 @@ ncclResult_t ncclEpCreateHandle(
             const int total_send_tokens = nRanks * max_tokens;
             const int padded_max_tokens = ((max_tokens + 15) / 16) * 16;
             const int num_experts_packed = (num_experts + 7) / 8;
-            const bool expert_major = (handle->hybridep.dispatch_output_layout == NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR);
-            const size_t em_alignment = handle->hybridep.dispatch_output_per_expert_alignment;
 
             size_t sz_routing   = align256(static_cast<size_t>(total_send_tokens) * num_experts_packed);
             size_t sz_r2a       = align256(static_cast<size_t>(nNodes) * padded_max_tokens * sizeof(bool));
