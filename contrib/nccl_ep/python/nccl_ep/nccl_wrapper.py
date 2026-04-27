@@ -102,6 +102,9 @@ class ncclEpTensorTag_t:
     NCCL_EP_TENSOR_TAG_RECV_EXPERT_COUNTER_DEVICE = 5
     NCCL_EP_TENSOR_TAG_RECV_EXPERT_COUNTER_HOST = 6
     NCCL_EP_TENSOR_TAG_TOKENS_PER_EXPERTS = 7
+    NCCL_EP_TENSOR_TAG_RECV_TOPK_IDX     = 8
+    NCCL_EP_TENSOR_TAG_RECV_TOPK_WEIGHTS = 9
+    NCCL_EP_TENSOR_TAG_OFFSETS_PER_EXPERTS = 10
 
 
 class ncclEpAlgorithm_t:
@@ -164,10 +167,8 @@ class NCCLLibrary:
         Function("ncclEpGroupDestroy", ncclResult_t, [ncclEpGroup_t, cudaStream_t]),
         Function("ncclEpCreateHandle", ncclResult_t, [
             ctypes.POINTER(ncclEpHandle_t), ncclEpGroup_t,
-            ncclNDTensor_t,  # topk_idx (opaque handle)
-            ctypes.POINTER(ncclNDTensor_t),  # local_tensors array
-            ctypes.c_uint,  # num_local_tensors
-            ctypes.POINTER(ncclEpHandleConfig_t),
+            ncclNDTensor_t,  # topk_idx
+            ctypes.POINTER(ncclEpHandleConfig_t),  # config
             cudaStream_t,
             ctypes.c_bool  # use_fp8
         ]),
@@ -451,21 +452,14 @@ class NCCLLibrary:
             raise RuntimeError("NCCL EP not available")
         self.NCCL_CHECK(self._funcs["ncclEpGroupDestroy"](ep_group, stream))
 
-    def ncclEpCreateHandle(self, ep_group, topk_tensor, config, stream, local_tensors=None, use_fp8=False):
+    def ncclEpCreateHandle(self, ep_group, topk_tensor, config, stream, use_fp8=False):
         """Create EP handle for a specific dispatch/combine operation.
-
-        This triggers the notify_dispatch phase in HT mode, computing token distribution.
 
         Args:
             ep_group: NCCL EP group handle
             topk_tensor: ncclNDTensor_t with topk indices
-            config: ncclEpHandleConfig_t configuration (reserved, should be None)
+            config: ncclEpHandleConfig_t configuration (or None for defaults)
             stream: CUDA stream
-            local_tensors: Optional list of ncclNDTensor_t for local operations.
-                          HT mode: accepts optional RECV_EXPERT_COUNTER tensor (1D, ncclInt32, size=num_local_experts)
-                          with tag RECV_EXPERT_COUNTER_HOST (pinned+mapped) or _DEVICE.
-                          Required when max_tokens_per_rank=NCCL_EP_AUTO (0).
-                          LL mode: does not accept local tensors (must be None or empty list).
             use_fp8: Enable FP8 for dispatch (default: False)
 
         Returns:
@@ -473,22 +467,8 @@ class NCCLLibrary:
         """
         handle = ncclEpHandle_t()
         config_ptr = ctypes.byref(config) if config else None
-
-        # Prepare local_tensors array
-        if local_tensors is None or len(local_tensors) == 0:
-            local_tensors_ptr = None
-            num_local_tensors = 0
-        else:
-            # Create array of opaque tensor handles
-            tensor_arr = (ncclNDTensor_t * len(local_tensors))()
-            for i, tensor in enumerate(local_tensors):
-                tensor_arr[i] = tensor
-            local_tensors_ptr = ctypes.cast(tensor_arr, ctypes.POINTER(ncclNDTensor_t))
-            num_local_tensors = len(local_tensors)
-
         self.NCCL_CHECK(self._funcs["ncclEpCreateHandle"](
-            ctypes.byref(handle), ep_group, topk_tensor,
-            local_tensors_ptr, num_local_tensors, config_ptr, stream, use_fp8
+            ctypes.byref(handle), ep_group, topk_tensor, config_ptr, stream, use_fp8
         ))
         return handle
 

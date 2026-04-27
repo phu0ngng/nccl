@@ -192,9 +192,10 @@ struct BenchmarkTensors {
     // Dispatch tensors
     ncclNDTensor_t inputs[3];
     ncclNDTensor_t outputs[3];
-    ncclNDTensor_t local_tensors[1];
+    ncclNDTensor_t local_tensors[3];  // [0]=RECV_COUNTER (LL), [1]=TOKENS_PER_EXPERTS (HT expert-major), [2]=OFFSETS_PER_EXPERTS (HT expert-major)
     int num_dispatch_inputs;
     int num_dispatch_outputs;
+    int num_dispatch_local_tensors;
 
     // Combine tensors
     ncclNDTensor_t combine_inputs[2];
@@ -239,6 +240,7 @@ static void setupLowLatencyTensorsSharedInputs(
     NCCLCHECK(ncclEpTensorCreate(ep_group, &tensors.local_tensors[0], 1, ncclInt32,
                                    NCCL_EP_TENSOR_TAG_RECV_EXPERT_COUNTER_DEVICE,
                                    nullptr, num_local_experts));
+    tensors.num_dispatch_local_tensors = 1;
 }
 
 // LL benchmark — NCCL_EP_LAYOUT_EXPERT_MAJOR dispatch outputs + combine input shape.
@@ -381,6 +383,7 @@ void setupHighThroughputTensors(
     tensors.is_ll_mode = false;
     tensors.num_dispatch_inputs = 3;
     tensors.num_dispatch_outputs = 3;
+    tensors.num_dispatch_local_tensors = 0;
     // HT combine uses only 1 input (expert_outputs) and 1 output (combined_output)
     tensors.num_combine_inputs = 1;
     tensors.num_combine_outputs = 1;
@@ -429,11 +432,6 @@ void setupHighThroughputTensors(
     NCCLCHECK(ncclEpTensorCreate(ep_group, &tensors.outputs[2], 2, ncclInt64,
                                    NCCL_EP_TENSOR_TAG_TOPK_IDX,
                                    nullptr, num_recv_tokens, top_k));
-
-    // Local tensors: recv expert counter (device memory) - required for dispatch
-    NCCLCHECK(ncclEpTensorCreate(ep_group, &tensors.local_tensors[0], 1, ncclInt32,
-                                   NCCL_EP_TENSOR_TAG_RECV_EXPERT_COUNTER_DEVICE,
-                                   nullptr, num_local_experts));
 
     // Combine input: 2D expert outputs - same size as dispatch output (received token count)
     NCCLCHECK(ncclEpTensorCreate(ep_group, &tensors.expert_outputs, 2, ncclBfloat16,
@@ -962,10 +960,10 @@ ValidationResult validateDispatchOutput(
 
         // Determine which output slots contain real tokens (not padding/unused).
         // Expert-major layout: token zones are sorted by expert and padded to alignment.
-        //   recv_topk_idx is unreliable because local_expert_routing_map is GPU-major
+        //   recv_topk_idx is unreliable because local_expert_routing_map is rank-major
         //   indexed but the expert-major buffer is not — use per-expert counts/offsets
         //   from dispatch meta instead.
-        // GPU-major layout: recv_topk_idx >= 0 correctly identifies valid slots.
+        // rank-major layout: recv_topk_idx >= 0 correctly identifies valid slots.
         // For expert-major with alignment: use expert_token_counts_padded + expert_token_offsets
         // (the same combination verified by the DispatchMeta unit test) to mark every row
         // within each expert's padded zone.  Zero-padding rows decode to rank=128 in
@@ -1032,7 +1030,7 @@ ValidationResult validateDispatchOutput(
                 // In expert-major+meta mode, valid_slot covers the full padded zone including
                 // zero-padding rows.  Zero-padding slots decode to rank=128 (out of range) and
                 // should be silently skipped; any real token that failed to arrive will show up
-                // as a "missing token" below.  In GPU-major mode (no meta), every marked slot
+                // as a "missing token" below.  In rank-major mode (no meta), every marked slot
                 // must have a real token, so treat it as an error.
                 if (meta_expert_offsets == nullptr) {
                     if (errors_printed < max_errors_to_print) {
@@ -1289,7 +1287,7 @@ ValidationResult validateCombineOutputLL(
 }
 
 // Validate combine output for High Throughput mode
-// GPU-major:    combined[t] = x[t] * num_unique_ranks  (one slot per dest rank)
+// rank-major:    combined[t] = x[t] * num_unique_ranks  (one slot per dest rank)
 // Expert-major: combined[t] = x[t] * num_valid_experts (one slot per expert, S2G-driven dup)
 // Compared using calc_diff in double precision with threshold 5e-6
 ValidationResult validateCombineOutputHT(
@@ -1314,7 +1312,7 @@ ValidationResult validateCombineOutputHT(
                              output_size * sizeof(uint16_t), cudaMemcpyDeviceToHost));
     }
 
-    // GPU-major: one dispatch slot per destination rank → scale by unique ranks.
+    // rank-major: one dispatch slot per destination rank → scale by unique ranks.
     // Expert-major: one dispatch slot per expert (S2G-driven dup) → scale by valid experts.
     int* unique_ranks = countUniqueRanksPerToken(topk_idx_host, num_tokens,
                                                   num_experts, top_k, nRanks);
@@ -2031,7 +2029,7 @@ void printUsage(const char* programName, int myRank) {
         printf("  --dynamic-tokens        Enable dynamic token allocation (HT only, required for random topk)\n");
         printf("  --expert-sort           Expert-major dispatch output layout (tokens grouped by expert, HT only)\n");
         printf("  --expert-sort-align <N> Expert-major layout with per-expert zone aligned to N tokens (implies --expert-sort)\n");
-        printf("  --em-overalloc <N>      Expert-major IPC buffer overalloc factor in %% (default: 250 = 2.5x)\n");
+        printf("  --expert-major-overalloc <N>  Expert-major IPC buffer overalloc factor in %% (default: 250 = 2.5x)\n");
         printf("  --help                  Show this help message\n");
     }
 }
@@ -2055,9 +2053,9 @@ int main(int argc, char* argv[]) {
     bool validate_data = false;  // Validate dispatch/combine correctness
     bool dispatch_only = false;  // Skip combine run and validation (use with --validate)
     bool dynamic_tokens = false;  // Enable dynamic token allocation (HT only, for random topk)
-    ncclEpOutputLayout_t output_layout = NCCL_EP_OUTPUT_LAYOUT_GPU_MAJOR;
+    ncclEpOutputLayout_t output_layout = NCCL_EP_OUTPUT_LAYOUT_RANK_MAJOR;
     size_t expert_sort_alignment = 0;  // 0 = no padding; >1 aligns each expert zone
-    unsigned int em_overalloc = 0;    // 0 = default (250 = 2.5x); fixed-point 0.01 units
+    unsigned int expert_major_overalloc_pct = 0;    // 0 = default (250 = 2.5x); fixed-point 0.01 units
     // Initialize MPI
     MPICHECK(MPI_Init(&argc, &argv));
     MPICHECK(MPI_Comm_rank(MPI_COMM_WORLD, &myRank));
@@ -2081,7 +2079,7 @@ int main(int argc, char* argv[]) {
         {"dynamic-tokens", no_argument,       0, 'M'},
         {"expert-sort",    no_argument,       0, 'S'},
         {"expert-sort-align", required_argument, 0, 'A'},
-        {"em-overalloc",   required_argument, 0, 'O'},
+        {"expert-major-overalloc", required_argument, 0, 'O'},
         {"help",           no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
@@ -2161,7 +2159,7 @@ int main(int argc, char* argv[]) {
                 expert_sort_alignment = static_cast<size_t>(atoi(optarg));
                 break;
             case 'O':
-                em_overalloc = static_cast<unsigned int>(atoi(optarg));
+                expert_major_overalloc_pct = static_cast<unsigned int>(atoi(optarg));
                 break;
             case 'h':
                 printUsage(argv[0], myRank);
@@ -2313,7 +2311,7 @@ int main(int argc, char* argv[]) {
     // num_qp_per_rank: LL mode requires >= num_local_experts, HT mode uses auto
     config.num_qp_per_rank = (algorithm == NCCL_EP_ALGO_LOW_LATENCY) ? num_local_experts : NCCL_EP_AUTO;
     config.num_channels = NCCL_EP_AUTO;
-    config.expert_major_overalloc = em_overalloc;  // 0 = default (250 = 2.5x)
+    config.expert_major_overalloc = expert_major_overalloc_pct;  // 0 = default (250 = 2.5x)
 
     printf("Rank %d: Testing ncclEpCreateGroup with algorithm: %s\n", myRank,
            (algorithm == NCCL_EP_ALGO_LOW_LATENCY) ? "LOW_LATENCY" : "HIGH_THROUGHPUT");
@@ -2387,52 +2385,13 @@ int main(int argc, char* argv[]) {
     const ncclEpHandleConfig* cfg_ptr =
         (output_layout == NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR) ? &handle_cfg : nullptr;
 
-    // For expert-major + validation: collect per-expert counts/offsets from handle creation
-    // so validateDispatchOutput can identify real vs padding slots without using
-    // recv_topk_idx (which is unreliable for expert-major due to GPU-major indexed routing map).
-    ncclNDTensor_t meta_counts_tensor  = nullptr;
-    ncclNDTensor_t meta_offsets_tensor = nullptr;
-    int64_t* dispatch_meta_counts_host  = nullptr;
-    int64_t* dispatch_meta_offsets_host = nullptr;
-    ncclEpDispatchMeta_t dispatch_meta = {};
-
-    // Use expert_token_counts_padded + expert_token_offsets — the same pair verified by the
-    // DispatchMeta unit test.  Only needed for expert-major with alignment > 1 (no padding
-    // means recv_topk_idx suffices).
-    // Dispatch meta (expert_token_offsets + expert_token_counts_padded) is needed whenever
-    // we validate expert-major output: used both for valid-slot detection (alignment > 1)
-    // and for the dup-zone check (tokens routed to multiple local experts).
-    bool need_dispatch_meta = (algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT &&
-                               output_layout == NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR &&
-                               validate_data);
-    if (need_dispatch_meta) {
-        NCCLCHECK(ncclEpTensorCreate(ep_group, &meta_counts_tensor, 1, ncclInt64,
-                                     NCCL_EP_TENSOR_TAG_NONE, nullptr, num_local_experts));
-        NCCLCHECK(ncclEpTensorCreate(ep_group, &meta_offsets_tensor, 1, ncclInt64,
-                                     NCCL_EP_TENSOR_TAG_NONE, nullptr, num_local_experts));
-        dispatch_meta.expert_token_counts_padded = meta_counts_tensor;
-        dispatch_meta.expert_token_offsets       = meta_offsets_tensor;
-    }
-
     MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
     double handle_create_start = MPI_Wtime();
-    NCCLCHECK(ncclEpCreateHandle(&ep_handle, ep_group, topk_idx, cfg_ptr,
-                                  need_dispatch_meta ? &dispatch_meta : nullptr, stream, use_fp8));
+    NCCLCHECK(ncclEpCreateHandle(&ep_handle, ep_group, topk_idx, cfg_ptr, stream, use_fp8));
     CUDACHECK(cudaStreamSynchronize(stream));
     double handle_create_end = MPI_Wtime();
     double handle_create_ms = (handle_create_end - handle_create_start) * 1000.0;
     printf("Rank %d: ncclEpCreateHandle took %.2f ms\n", myRank, handle_create_ms);
-
-    if (need_dispatch_meta) {
-        dispatch_meta_counts_host  = new int64_t[num_local_experts];
-        dispatch_meta_offsets_host = new int64_t[num_local_experts];
-        void* d_counts;  NCCLCHECK(ncclEpTensorGetData(meta_counts_tensor,  &d_counts));
-        void* d_offsets; NCCLCHECK(ncclEpTensorGetData(meta_offsets_tensor, &d_offsets));
-        CUDACHECK(cudaMemcpy(dispatch_meta_counts_host, d_counts,
-                             num_local_experts * sizeof(int64_t), cudaMemcpyDeviceToHost));
-        CUDACHECK(cudaMemcpy(dispatch_meta_offsets_host, d_offsets,
-                             num_local_experts * sizeof(int64_t), cudaMemcpyDeviceToHost));
-    }
 
     // max_tokens_per_rank is the per-rank dispatch count.
     // num_recv_tokens is the max tokens this rank can receive (nRanks * max_tokens_per_rank).
@@ -2445,7 +2404,7 @@ int main(int argc, char* argv[]) {
         // expert zones, so total recv tokens can exceed max_tokens_per_rank * nRanks.
         // Use the same overalloc factor as the IPC buffer in the library.
         if (output_layout == NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR) {
-            unsigned int pct = em_overalloc ? em_overalloc : 250u;
+            unsigned int pct = expert_major_overalloc_pct ? expert_major_overalloc_pct : 250u;
             num_recv_tokens = (static_cast<size_t>(config.max_tokens_per_rank) * nRanks * pct + 99) / 100;
         }
     }
@@ -2460,6 +2419,23 @@ int main(int argc, char* argv[]) {
     } else {
         setupHighThroughputTensors(ep_group, tensors, topk_idx, num_tokens, hidden, top_k,
                                    num_local_experts, num_recv_tokens);
+    }
+
+    // For HT + validation: create TOKENS_PER_EXPERTS and OFFSETS_PER_EXPERTS local tensors
+    // that dispatch will write per-expert token counts and offsets into.
+    // TOKENS_PER_EXPERTS is only meaningful for expert-major here (padded counts).
+    // OFFSETS_PER_EXPERTS is expert-major only.
+    int64_t* dispatch_meta_counts_host  = nullptr;
+    int64_t* dispatch_meta_offsets_host = nullptr;
+    bool need_dispatch_meta = (algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT &&
+                               output_layout == NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR &&
+                               validate_data);
+    if (need_dispatch_meta) {
+        NCCLCHECK(ncclEpTensorCreate(ep_group, &tensors.local_tensors[0], 1, ncclInt64,
+                                     NCCL_EP_TENSOR_TAG_TOKENS_PER_EXPERTS, nullptr, num_local_experts));
+        NCCLCHECK(ncclEpTensorCreate(ep_group, &tensors.local_tensors[1], 1, ncclInt64,
+                                     NCCL_EP_TENSOR_TAG_OFFSETS_PER_EXPERTS, nullptr, num_local_experts));
+        tensors.num_dispatch_local_tensors = 2;
     }
 
     // Initialize validation data if enabled (fills tensors with rank-based patterns)
@@ -2492,21 +2468,18 @@ int main(int argc, char* argv[]) {
     // (matching DeepEP's benchmarking approach)
 
     // Debug: print tensor setup for HT mode
-    int num_dispatch_local = (algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT) ? 0 : 1;
     if (algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT && myRank == 0) {
         printf("HT Dispatch: %d inputs, %d outputs, %d local_tensors\n",
-               tensors.num_dispatch_inputs, tensors.num_dispatch_outputs, num_dispatch_local);
+               tensors.num_dispatch_inputs, tensors.num_dispatch_outputs, tensors.num_dispatch_local_tensors);
         printf("HT Combine: %d inputs, %d outputs, %d local_tensors\n",
                tensors.num_combine_inputs, tensors.num_combine_outputs, tensors.num_combine_local_tensors);
         fflush(stdout);
     }
-    // HT mode: 0 local tensors, LL mode: 1 local tensor (tokens_per_experts)
-    int num_dispatch_local_tensors = (algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT) ? 0 : 1;
 
     auto dispatch_fn = [&]() {
         NCCLCHECK(ncclEpDispatch(ep_handle, tensors.inputs, tensors.num_dispatch_inputs,
                                   tensors.outputs, tensors.num_dispatch_outputs,
-                                  tensors.local_tensors, num_dispatch_local_tensors, false, &dispatch_config, stream));
+                                  tensors.local_tensors, tensors.num_dispatch_local_tensors, false, &dispatch_config, stream));
         NCCLCHECK(ncclEpComplete(ep_handle, nullptr, stream));
     };
 
@@ -2640,6 +2613,20 @@ int main(int argc, char* argv[]) {
         CUDACHECK(cudaStreamSynchronize(stream));
         MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
 
+        // Copy per-expert metadata from device to host for validation
+        if (need_dispatch_meta) {
+            dispatch_meta_counts_host  = new int64_t[num_local_experts];
+            dispatch_meta_offsets_host = new int64_t[num_local_experts];
+            void* counts_ptr;
+            void* offsets_ptr;
+            NCCLCHECK(ncclEpTensorGetData(tensors.local_tensors[0], &counts_ptr));
+            NCCLCHECK(ncclEpTensorGetData(tensors.local_tensors[1], &offsets_ptr));
+            CUDACHECK(cudaMemcpy(dispatch_meta_counts_host,  counts_ptr,
+                                 num_local_experts * sizeof(int64_t), cudaMemcpyDeviceToHost));
+            CUDACHECK(cudaMemcpy(dispatch_meta_offsets_host, offsets_ptr,
+                                 num_local_experts * sizeof(int64_t), cudaMemcpyDeviceToHost));
+        }
+
         ValidationResult dispatch_valid = validateDispatchOutput(
             tensors, num_tokens, hidden, top_k, num_experts, num_local_experts, myRank, nRanks,
             algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT,
@@ -2731,9 +2718,13 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Cleanup dispatch meta tensors
-    if (meta_counts_tensor)  NCCLCHECK(ncclEpTensorDestroy(ep_group, meta_counts_tensor));
-    if (meta_offsets_tensor) NCCLCHECK(ncclEpTensorDestroy(ep_group, meta_offsets_tensor));
+    // Destroy HT per-expert metadata local tensors and free host copies
+    if (need_dispatch_meta) {
+        NCCLCHECK(ncclEpTensorDestroy(ep_group, tensors.local_tensors[0]));
+        NCCLCHECK(ncclEpTensorDestroy(ep_group, tensors.local_tensors[1]));
+        tensors.local_tensors[0] = nullptr;
+        tensors.local_tensors[1] = nullptr;
+    }
     delete[] dispatch_meta_counts_host;
     delete[] dispatch_meta_offsets_host;
 

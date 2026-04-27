@@ -1417,7 +1417,6 @@ ncclResult_t ncclEpCreateHandle(
     ncclEpGroup_t               ep_group,
     ncclNDTensor_t              topk_idx,
     const ncclEpHandleConfig*   config,
-    ncclEpDispatchMeta_t*       out_meta,
     cudaStream_t                stream,
     bool                        use_fp8
 ) {
@@ -1448,10 +1447,10 @@ ncclResult_t ncclEpCreateHandle(
     handle->group = ep_group;
     handle->use_fp8 = use_fp8;
 
-    // Read output layout config (defaults to GPU-major if config is null).
+    // Read output layout config (defaults to rank-major if config is null).
     handle->hybridep.dispatch_output_layout =
         (config && config->dispatch_output_layout == NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR)
-        ? NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR : NCCL_EP_OUTPUT_LAYOUT_GPU_MAJOR;
+        ? NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR : NCCL_EP_OUTPUT_LAYOUT_RANK_MAJOR;
     handle->hybridep.dispatch_output_per_expert_alignment =
         (config && config->dispatch_output_per_expert_alignment > 1)
         ? config->dispatch_output_per_expert_alignment : 1;
@@ -1584,76 +1583,6 @@ ncclResult_t ncclEpCreateHandle(
     }
 
     NCCL_CHECK_RESULT(ncclEpUpdateHandle(handle, topk_idx, nullptr, 0, stream));
-
-    // Write out_meta outputs for expert-major mode (uses internal buffers written by ncclEpUpdateHandle).
-    if (out_meta != nullptr && ep_group->config.algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT) {
-        const bool expert_major = (handle->hybridep.dispatch_output_layout == NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR);
-        const int experts_per_rank = ep_group->num_local_experts;
-
-        if (expert_major && out_meta->expert_token_counts_padded) {
-            // Padded counts (int64) are not stored in a separate internal buffer; re-run preprocessing
-            // with the user buffer as the direct destination.
-            assert(out_meta->expert_token_counts_padded->ndim == 1);
-            assert(out_meta->expert_token_counts_padded->datatype == ncclInt64);
-            assert(out_meta->expert_token_counts_padded->sizes[0] >= static_cast<unsigned>(experts_per_rank));
-            assert(out_meta->expert_token_counts_padded->data != nullptr);
-            int64_t* meta_counts_dst = nullptr;
-            ncclEpTensorGetData(out_meta->expert_token_counts_padded,
-                                reinterpret_cast<void**>(&meta_counts_dst));
-            int64_t* meta_offsets_dst = nullptr;
-            if (out_meta->expert_token_offsets) {
-                ncclEpTensorGetData(out_meta->expert_token_offsets,
-                                    reinterpret_cast<void**>(&meta_offsets_dst));
-            }
-            const bool need_counts_for_meta = true;
-            nccl_ep::hybridep::call_metadata_preprocessing(
-                handle->hybridep.global_routing_map,
-                handle->hybridep.sparse_to_dense_map,
-                handle->hybridep.rdma_to_attn_map,
-                handle->hybridep.attn_to_rdma_map,
-                handle->hybridep.token_rank_mask,
-                handle->hybridep.num_tokens_for_experts,
-                handle->hybridep.local_expert_routing_map,
-                need_counts_for_meta ? handle->hybridep.per_expert_counts_tmp : nullptr,
-                handle->hybridep.preprocessing_scan_tmp,
-                ep_group->node_id,
-                ep_group->rank_in_node,
-                handle->num_tokens,
-                ep_group->hidden,
-                ep_group->nNodes,
-                ep_group->lsa_rank_count,
-                experts_per_rank,
-                stream,
-                handle->hybridep.expert_token_offsets,
-                meta_counts_dst,
-                meta_offsets_dst,
-                std::max<size_t>(1, handle->hybridep.dispatch_output_per_expert_alignment),
-                ep_group->ep_workspace,
-                ep_group->ep_workspace_bytes,
-                need_counts_for_meta ? handle->hybridep.per_expert_counts_tmp : nullptr);
-        } else if (expert_major && out_meta->expert_token_offsets) {
-            assert(out_meta->expert_token_offsets->ndim == 1);
-            assert(out_meta->expert_token_offsets->datatype == ncclInt64);
-            assert(out_meta->expert_token_offsets->sizes[0] >= static_cast<unsigned>(experts_per_rank));
-            assert(out_meta->expert_token_offsets->data != nullptr);
-            void* dst = nullptr;
-            ncclEpTensorGetData(out_meta->expert_token_offsets, &dst);
-            CUDA_CHECK(cudaMemcpyAsync(dst, handle->hybridep.expert_token_offsets,
-                static_cast<size_t>(experts_per_rank) * sizeof(int64_t),
-                cudaMemcpyDeviceToDevice, stream));
-        }
-        if (out_meta->expert_token_counts != nullptr && handle->hybridep.per_expert_counts_tmp != nullptr) {
-            assert(out_meta->expert_token_counts->ndim == 1);
-            assert(out_meta->expert_token_counts->datatype == ncclInt32);
-            assert(out_meta->expert_token_counts->sizes[0] >= static_cast<unsigned>(experts_per_rank));
-            assert(out_meta->expert_token_counts->data != nullptr);
-            void* dst = nullptr;
-            ncclEpTensorGetData(out_meta->expert_token_counts, &dst);
-            CUDA_CHECK(cudaMemcpyAsync(dst, handle->hybridep.per_expert_counts_tmp,
-                static_cast<size_t>(experts_per_rank) * sizeof(int32_t),
-                cudaMemcpyDeviceToDevice, stream));
-        }
-    }
 
     return ncclSuccess;
 }
@@ -1974,7 +1903,15 @@ ncclResult_t ncclEpDispatch(
 
         bool is_single_node = !is_internode_available(group);
 
-        assert(num_local_tensors == 0 && "HT dispatch does not accept local_tensors");
+        // HT dispatch accepts TOKENS_PER_EXPERTS for both layouts (padded in expert-major,
+        // unpadded in rank-major); OFFSETS_PER_EXPERTS is expert-major only.
+        ncclNDTensor_t ht_tokens_per_experts = find_tensor_by_tag(
+            local_tensors, num_local_tensors, NCCL_EP_TENSOR_TAG_TOKENS_PER_EXPERTS);
+        ncclNDTensor_t ht_offsets_per_experts = find_tensor_by_tag(
+            local_tensors, num_local_tensors, NCCL_EP_TENSOR_TAG_OFFSETS_PER_EXPERTS);
+        const bool expert_major = (handle->hybridep.dispatch_output_layout == NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR);
+        assert((ht_offsets_per_experts == nullptr || expert_major) &&
+               "OFFSETS_PER_EXPERTS local tensor is only valid with EXPERT_MAJOR layout");
 
         ncclNDTensor_t x = find_tensor_by_tag(inputs, num_inputs, NCCL_EP_TENSOR_TAG_TOKENS);
         ncclNDTensor_t topk_idx = find_tensor_by_tag(inputs, num_inputs, NCCL_EP_TENSOR_TAG_TOPK_IDX);
@@ -2223,6 +2160,50 @@ ncclResult_t ncclEpDispatch(
                     cudaMemcpyDeviceToDevice,
                     stream));
             }
+        }
+
+        // Write TOKENS_PER_EXPERTS (both layouts) and OFFSETS_PER_EXPERTS (expert-major only) to local_tensors
+        if (ht_tokens_per_experts || ht_offsets_per_experts) {
+            const int experts_per_rank = group->num_local_experts;
+            int64_t* counts_dst = nullptr;
+            int64_t* offsets_dst = nullptr;
+            if (ht_tokens_per_experts) {
+                assert(ht_tokens_per_experts->ndim == 1 && tensor_is_contiguous(ht_tokens_per_experts));
+                assert(ht_tokens_per_experts->datatype == ncclInt64);
+                assert(ht_tokens_per_experts->sizes[0] >= static_cast<unsigned>(experts_per_rank));
+                ncclEpTensorGetData(ht_tokens_per_experts, reinterpret_cast<void**>(&counts_dst));
+            }
+            if (ht_offsets_per_experts) {
+                assert(ht_offsets_per_experts->ndim == 1 && tensor_is_contiguous(ht_offsets_per_experts));
+                assert(ht_offsets_per_experts->datatype == ncclInt64);
+                assert(ht_offsets_per_experts->sizes[0] >= static_cast<unsigned>(experts_per_rank));
+                ncclEpTensorGetData(ht_offsets_per_experts, reinterpret_cast<void**>(&offsets_dst));
+            }
+            nccl_ep::hybridep::call_metadata_preprocessing(
+                handle->hybridep.global_routing_map,
+                handle->hybridep.sparse_to_dense_map,
+                handle->hybridep.rdma_to_attn_map,
+                handle->hybridep.attn_to_rdma_map,
+                handle->hybridep.token_rank_mask,
+                handle->hybridep.num_tokens_for_experts,
+                handle->hybridep.local_expert_routing_map,
+                handle->hybridep.per_expert_counts_tmp,
+                handle->hybridep.preprocessing_scan_tmp,
+                group->node_id,
+                group->rank_in_node,
+                handle->num_tokens,
+                group->hidden,
+                group->nNodes,
+                group->lsa_rank_count,
+                experts_per_rank,
+                stream,
+                handle->hybridep.expert_token_offsets,
+                counts_dst,
+                offsets_dst,
+                std::max<size_t>(1, handle->hybridep.dispatch_output_per_expert_alignment),
+                group->ep_workspace,
+                group->ep_workspace_bytes,
+                handle->hybridep.per_expert_counts_tmp);
         }
 
     }

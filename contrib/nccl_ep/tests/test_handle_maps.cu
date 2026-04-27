@@ -3,12 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Unit tests verifying that ncclEpCreateHandle builds the correct
- * sparse-to-dense map (S2D) for GPU-major vs expert-major output layouts.
+ * sparse-to-dense map (S2D) for rank-major vs expert-major output layouts.
  *
  * Only ncclEpCreateHandle is called — no dispatch/combine.
  *
  * S2D layout: int32_t[max_tokens_per_rank][n_ranks_per_node * experts_per_rank]
- *   GPU-major:    s2d[t][d * epr + 0] = recv slot at dest d; entries 1..epr-1 = -1.
+ *   rank-major:    s2d[t][d * epr + 0] = recv slot at dest d; entries 1..epr-1 = -1.
  *   Expert-major: s2d[t][d * epr + k] = expert-major slot for local expert k, or -1.
  *   (SEND direction: encodes where THIS rank's tokens go, not what arrives here.)
  *
@@ -20,7 +20,7 @@
  *   Rank 2 tokens: same as rank 0 (same experts, later source)
  *   Rank 3 tokens: same as rank 1 (same experts, later source)
  *
- * GPU-major S2D for rank D (epr=2):
+ * rank-major S2D for rank D (epr=2):
  *   dest_a = (D%2)*2  (first destination pair for D)
  *   dest_b = dest_a + 1
  *   base   = early ? 0 : 2  where early = (D < nranks/2)
@@ -96,19 +96,19 @@ class HandleMapsTest : public EpTestBase {
 protected:
     // dest_a, dest_b: the two destination ranks that g_rank sends to.
     // early: true when g_rank is the first (lower-index) source for its destinations.
-    // base_gpu_slot: GPU-major recv base slot (0 if early, 2 if late).
-    void routing_params(int& dest_a, int& dest_b, bool& early, int& base_gpu_slot) const {
+    // base_rank_slot: rank-major recv base slot (0 if early, 2 if late).
+    void routing_params(int& dest_a, int& dest_b, bool& early, int& base_rank_slot) const {
         dest_a        = (g_rank % 2) * 2;
         dest_b        = dest_a + 1;
         early         = (g_rank < g_nranks / 2);
-        base_gpu_slot = early ? 0 : 2;
+        base_rank_slot = early ? 0 : 2;
     }
 };
 
-// ── Test: S2D layout for GPU-major ────────────────────────────────────────────
+// ── Test: S2D layout for rank-major ────────────────────────────────────────────
 
-TEST_F(HandleMapsTest, S2DGpuMajor) {
-    ncclEpHandle_t h = make_handle(nullptr);  // default = GPU-major
+TEST_F(HandleMapsTest, S2DRankMajor) {
+    ncclEpHandle_t h = make_handle(nullptr);  // default = rank-major
     ASSERT_NE(h, nullptr);
 
     NcclEpHandleInspector insp(h);
@@ -122,7 +122,7 @@ TEST_F(HandleMapsTest, S2DGpuMajor) {
     routing_params(dest_a, dest_b, early, base);
     const int C = insp.inner_dim();  // n_ranks * epr
 
-    // GPU-major: slot written at dest * epr + 0; entries 1..epr-1 are -1.
+    // rank-major: slot written at dest * epr + 0; entries 1..epr-1 are -1.
     // Tokens 0,1 → dest_a; tokens 2,3 → dest_b.
     EXPECT_EQ(s2d[0 * C + dest_a * E + 0], base + 0) << "rank " << g_rank << ": tok0 dest_a";
     EXPECT_EQ(s2d[1 * C + dest_a * E + 0], base + 1) << "rank " << g_rank << ": tok1 dest_a";

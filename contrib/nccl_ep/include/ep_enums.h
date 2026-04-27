@@ -84,9 +84,12 @@ typedef enum {
     NCCL_EP_TENSOR_TAG_RECV_EXPERT_COUNTER_DEVICE = 5,
     // Tensor containing tokens received per expert (pinned host memory)
     NCCL_EP_TENSOR_TAG_RECV_EXPERT_COUNTER_HOST = 6,
-    // Tensor containing per-expert token counts
+    // Tensor containing per-expert received token counts (1D ncclInt64).
+    // Expert-major: padded counts (roundup to alignment); rank-major: unpadded counts.
     NCCL_EP_TENSOR_TAG_TOKENS_PER_EXPERTS = 7,
     // LL rank-major dispatch outputs: topk indices/weights received from source ranks
     NCCL_EP_TENSOR_TAG_RECV_TOPK_IDX     = 8,
     NCCL_EP_TENSOR_TAG_RECV_TOPK_WEIGHTS = 9,
+    // Tensor containing per-expert token offsets (prefix sum of padded counts) into the received token buffer (1D ncclInt64, expert-major only)
+    NCCL_EP_TENSOR_TAG_OFFSETS_PER_EXPERTS = 10,
 } ncclEpTensorTag_t;

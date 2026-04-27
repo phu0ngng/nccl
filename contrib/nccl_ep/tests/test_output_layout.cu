@@ -3,19 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Unit tests for ncclEpCreateHandle output layout and combine round-trip:
- *   NCCL_EP_OUTPUT_LAYOUT_GPU_MAJOR    — tokens grouped by source GPU rank
+ *   NCCL_EP_OUTPUT_LAYOUT_RANK_MAJOR    — tokens grouped by source GPU rank
  *   NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR — tokens grouped by local expert
  *
  * Tests (OutputLayoutTest fixture — top-k=1, each token targets one expert):
- *   GpuMajorLayout           — dispatch output slot order (GPU-major)
+ *   RankMajorLayout           — dispatch output slot order (rank-major)
  *   ExpertMajorLayout        — dispatch output slot order (expert-major)
  *   ExpertMajorWithAlignment — dispatch output with per-expert zone alignment
- *   CombineGpuMajor          — dispatch + identity expert + combine recovers original values (GPU-major)
+ *   CombineRankMajor          — dispatch + identity expert + combine recovers original values (rank-major)
  *   CombineExpertMajor       — dispatch + identity expert + combine recovers original values (expert-major)
  *   DispatchMeta             — expert_token_counts_padded and expert_token_offsets
  *
  * Tests (TopK2MixedRoutingTest fixture — top-k=2, mixed same-rank and cross-rank routing):
- *   GpuMajorLayout              — correct recv counts and no duplication for same-rank pairs
+ *   RankMajorLayout              — correct recv counts and no duplication for same-rank pairs
  *   ExpertMajorNoAlign          — E1 duplicated from E0 for same-rank pairs; both zones distinct for cross-rank
  *   ExpertMajorAlignZeroPadding — E1 duplicated+padded for same-rank pairs; E1 filled for cross-rank
  *   ExpertMajorDupTokens        — slot-by-slot equality of E0/E1 zones for same-rank pairs (LCP warp)
@@ -39,7 +39,7 @@
  *   Rank 3: T0=13,T1=14, T2=15, T3=16 routing: T0→E4, T1→E5, T2→E6, T3→E7
  *
  *   Rank 0 dispatch output (hosts E0,E1 ← ranks 0,2):
- *     GPU-major:     slots [0,1]={1,2}   slots [2,3]={9,10}
+ *     rank-major:     slots [0,1]={1,2}   slots [2,3]={9,10}
  *     Expert-major:  slots [0,1]={1,9}   slots [2,3]={2,10}
  *     +alignment=4:  slots [0..3]={1,9,pad,pad}  slots [4..7]={2,10,pad,pad}
  *
@@ -50,16 +50,16 @@
  *   T3 → E5 (rank 2) AND E7 (rank 3)  ← cross-rank pair: one expert on each of ranks 2,3
  *
  *   All 4 source ranks send T_i identically.
- *   Ranks 0,1 receive 4 tokens (T_{g_rank} from each source, GPU-major only).
+ *   Ranks 0,1 receive 4 tokens (T_{g_rank} from each source, rank-major only).
  *   Ranks 2,3 receive 8 tokens (T2 and T3 from each source, one token per local expert).
  *
  *   Same-rank pair behavior (ranks 0,1) — rank 0 shown:
- *     GPU-major:             slots [0..3] = {1,5,9,13}  (no slot duplication; 4 recv)
+ *     rank-major:             slots [0..3] = {1,5,9,13}  (no slot duplication; 4 recv)
  *     Expert-major no-align: E0 zone [0..3] = {1,5,9,13}, E1 zone [4..7] = {1,5,9,13} (LCP; 8 recv)
  *     Expert-major align=4:  E0 zone [0..3] = {1,5,9,13}, E1 zone [4..7] = {1,5,9,13} (LCP; 8 recv)
  *
  *   Cross-rank pair behavior (ranks 2,3) — rank 2 shown (E4=local-E0, E5=local-E1):
- *     GPU-major:             slots [0..7] = {3,4,7,8,11,12,15,16} (T2 and T3, grouped by source)
+ *     rank-major:             slots [0..7] = {3,4,7,8,11,12,15,16} (T2 and T3, grouped by source)
  *     Expert-major no-align: E0 zone = {3,7,11,15} (T2→E4), E1 zone = {4,8,12,16} (T3→E5)
  *     Expert-major align=4:  same zones, each padded to 4 (already exactly 4 tokens)
  *
@@ -179,9 +179,9 @@ protected:
     }
 };
 
-// ── Test: GPU-major layout ────────────────────────────────────────────────────
+// ── Test: rank-major layout ────────────────────────────────────────────────────
 
-TEST_F(OutputLayoutTest, GpuMajorLayout) {
+TEST_F(OutputLayoutTest, RankMajorLayout) {
     ncclEpHandle_t h = make_handle(nullptr);
     ASSERT_NE(h, nullptr);
 
@@ -193,7 +193,7 @@ TEST_F(OutputLayoutTest, GpuMajorLayout) {
 
     auto slots = run_dispatch(h, static_cast<int>(num_recv));
 
-    // GPU-major: tokens from the lower-numbered contributing rank in [0,1],
+    // rank-major: tokens from the lower-numbered contributing rank in [0,1],
     //            tokens from the higher-numbered rank in [2,3].
     // Ranks 0,2 contribute to experts 0-3; ranks 1,3 contribute to experts 4-7.
     std::set<float> first_half(slots.begin(), slots.begin() + 2);
@@ -291,10 +291,10 @@ TEST_F(OutputLayoutTest, ExpertMajorWithAlignment) {
     NCCL_ASSERT(ncclEpHandleDestroy(h));
 }
 
-// ── Test: combine round-trip (GPU-major) ─────────────────────────────────────
+// ── Test: combine round-trip (rank-major) ─────────────────────────────────────
 // dispatch + identity expert + combine must recover the original token values.
 
-TEST_F(OutputLayoutTest, CombineGpuMajor) {
+TEST_F(OutputLayoutTest, CombineRankMajor) {
     ncclEpHandle_t h = make_handle(nullptr);
     ASSERT_NE(h, nullptr);
 
@@ -314,7 +314,7 @@ TEST_F(OutputLayoutTest, CombineGpuMajor) {
 
 // ── Test: combine round-trip (expert-major, no alignment) ─────────────────────
 // Expert-major changes dispatch output slot order; combine uses the remapped
-// S2D to route expert outputs back correctly — result identical to GPU-major.
+// S2D to route expert outputs back correctly — result identical to rank-major.
 
 TEST_F(OutputLayoutTest, CombineExpertMajor) {
     ncclEpHandleConfig cfg{};
@@ -511,9 +511,9 @@ protected:
     }
 };
 
-// ── Test: GPU-major — correct recv counts; no duplication for same-rank pairs ─
+// ── Test: rank-major — correct recv counts; no duplication for same-rank pairs ─
 
-TEST_F(TopK2MixedRoutingTest, GpuMajorLayout) {
+TEST_F(TopK2MixedRoutingTest, RankMajorLayout) {
     ncclEpHandle_t h = make_handle2(nullptr);
     ASSERT_NE(h, nullptr);
 

@@ -151,7 +151,7 @@ ncclResult_t ncclEpTensorDestroy(
 
 // Token ordering in the dispatch output buffer.
 typedef enum {
-    NCCL_EP_OUTPUT_LAYOUT_GPU_MAJOR    = 0,  // default: tokens grouped by source GPU
+    NCCL_EP_OUTPUT_LAYOUT_RANK_MAJOR   = 0,  // default: tokens grouped by source rank
     NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR = 1,  // tokens grouped by local expert (required for GroupedGEMM)
 } ncclEpOutputLayout_t;
 
@@ -166,7 +166,7 @@ typedef enum {
 
 // Per-handle configuration (pass to ncclEpCreateHandle; NULL uses defaults).
 struct ncclEpHandleConfig {
-    // Token ordering in the dispatch output buffer (default: GPU_MAJOR).
+    // Token ordering in the dispatch output buffer (default: RANK_MAJOR).
     ncclEpOutputLayout_t dispatch_output_layout;
     // Per-expert block alignment in the dispatch output, in tokens.
     // 0 or 1 = no padding.  Must be a power of two when > 1.
@@ -181,21 +181,6 @@ struct ncclEpHandleConfig {
 typedef struct ncclEpHandle* ncclEpHandle_t;
 typedef struct ncclEpHandleConfig* ncclEpHandleConfig_t;
 
-// Per-expert dispatch metadata written during ncclEpCreateHandle.
-// Caller allocates device buffers; set a field to NULL to skip that output.
-typedef struct {
-    ncclNDTensor_t expert_token_counts;        // 1D ncclInt32 [num_local_experts]
-                                               //   unpadded token count per expert (actual tokens received)
-                                               //   NULL to skip
-    ncclNDTensor_t expert_token_counts_padded; // 1D ncclInt64 [num_local_experts]
-                                               //   aligned count: roundup(recv[e], alignment)
-                                               //   NULL to skip; only valid with EXPERT_MAJOR layout
-    ncclNDTensor_t expert_token_offsets;       // 1D ncclInt64 [num_local_experts]
-                                               //   prefix-sum of aligned counts;
-                                               //   offsets[e] = start token index of expert e
-                                               //   NULL to skip; only valid with EXPERT_MAJOR layout
-} ncclEpDispatchMeta_t;
-
 // Create and initialize an EP handle.
 //   * Performs dispatch setup and (in HT mode only) metadata exchange.
 //   * This call is collective and must be invoked by all ranks in the group.
@@ -205,11 +190,6 @@ typedef struct {
 //   ep_group  - [IN]  A valid EP group
 //   topk_idx  - [IN]  Routing tensor: SPARSE [num_tokens, top_k] int64
 //   config    - [IN]  Optional handle config (NULL uses defaults)
-//   out_meta  - [OUT] Optional per-expert metadata written on the same stream.
-//               expert_token_counts         valid for any layout (unpadded counts).
-//               expert_token_counts_padded  valid only with EXPERT_MAJOR layout.
-//               expert_token_offsets        valid only with EXPERT_MAJOR layout.
-//               Set individual fields to NULL to skip. NULL = skip all.
 //   stream    - [IN]  CUDA stream
 //   use_fp8   - [IN]  Enable FP8 for dispatch (default: false)
 //
@@ -220,7 +200,6 @@ ncclResult_t ncclEpCreateHandle(
     ncclEpGroup_t                ep_group,
     ncclNDTensor_t               topk_idx,
     const ncclEpHandleConfig*    config,
-    ncclEpDispatchMeta_t*        out_meta,    // NULL to skip
     cudaStream_t                 stream,
     bool                         use_fp8 = false
 );
@@ -303,8 +282,15 @@ typedef struct {
 //   num_outputs   - [IN]     Number of output tensors (equal to num_inputs plus number of scaling tensors)
 //   local_tensors - [IN,OUT] Array of pointers to preallocated tensors, with information that is local to the rank.
 //                            LL mode: accepts 1 optional local tensor:
-//                                    NUM_TOKENS_PER_EXPERTS: [OUT] a 1D tensor of unsigned int [num_experts]
-//                                    that contains the number of tokens received by each expert on this rank.
+//                                    RECV_EXPERT_COUNTER_DEVICE: [OUT] 1D ncclInt32 [num_local_experts]
+//                                    containing the number of tokens received per expert on this rank.
+//                            HT mode: accepts up to 2 optional local tensors:
+//                                    TOKENS_PER_EXPERTS: [OUT] 1D ncclInt64 [num_local_experts]
+//                                    token count per expert. Expert-major: padded count
+//                                    (roundup(recv[e], alignment)); rank-major: unpadded count.
+//                                    OFFSETS_PER_EXPERTS: [OUT] 1D ncclInt64 [num_local_experts] (expert-major only)
+//                                    prefix-sum of padded counts; offsets[e] = start index of expert e
+//                                    in the dispatch output buffer.
 //   num_local_tensors - [IN] Number of local tensors.
 //   send_only     - [IN]     If true, the dispatch will only initiate data transfers and immediately
 //                            release GPU resources (without waiting for the data to be received).
@@ -421,7 +407,7 @@ ncclResult_t ncclEpComplete(
 // With NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR and non-zero alignment, the returned value
 // is the PADDED total across all experts (sum of aligned per-expert counts), which is
 // the correct size to allocate for the dispatch recv buffer.
-// With GPU-major layout (default) the value equals the unpadded token count.
+// With rank-major layout (default) the value equals the unpadded token count.
 //
 // Arguments:
 //   handle           - [IN]   A valid EP handle.

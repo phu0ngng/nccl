@@ -10,7 +10,7 @@
 
 // Returns the device pointer to the sparse-to-dense map for a HT handle.
 // S2D layout: int32_t[max_tokens_per_rank][n_ranks_per_node * experts_per_rank]
-// GPU-major:    s2d[token][dest * epr + 0] = recv slot; entries 1..epr-1 = -1.
+// rank-major:    s2d[token][dest * epr + 0] = recv slot; entries 1..epr-1 = -1.
 // Expert-major: s2d[token][dest * epr + k] = expert-major slot for local expert k, or -1.
 const int32_t* ncclEpHandle_test_getSparseToDenseMap(ncclEpHandle_t handle);
 
