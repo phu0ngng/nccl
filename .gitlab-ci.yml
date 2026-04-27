@@ -620,10 +620,11 @@ setup-cw-dfw:
     - .cw-dfw
     - .setup
   rules:
-    # - <<: *post_submit_rule
-    # - <<: *pre_submit_core_rule
-    # - if: $RUN_ON_CW_DFW == "1"
-    #   when: always
+    - if: $RUN_ON_CW_DFW != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
+      when: always
+    - <<: *weekly_rule
     - when: never
   needs: ["build-ipp6"]
   variables:
@@ -4018,14 +4019,15 @@ perf-regression-polyphe:
 ## Comprehensive performance sweeps across node scales
 ## Templates defined in .gitlab-template.yml
 ##
-## COMPREHENSIVE_SWEEP variable controls which jobs run:
-##   - "off": No comprehensive sweep jobs run
-##   - "debug": Only debug jobs run (1-node intra + 2-node inter per cluster)
-##   - "full": All jobs run (debug + full scale matrices)
+## Weekly pipelines run full-scale comprehensive sweep jobs when the platform is enabled.
+## COMPREHENSIVE_SWEEP controls opt-in non-weekly runs:
+##   - "off": No additional comprehensive sweep jobs run
+##   - "debug": Debug jobs run (1-node intra + 2-node inter per cluster)
+##   - "full": Full-scale matrix jobs run
 ##
 
 #############################################
-# DEBUG Jobs - Run on "debug" or "full" mode
+# DEBUG Jobs - Run only on "debug" mode
 # 1-node intra + 2-node inter per cluster
 #############################################
 
@@ -4066,8 +4068,8 @@ cs-cw-dfw-intra-debug:
     - .cw-dfw
     - .comprehensive-sweep
   rules:
-    # - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_CW_DFW == "1"
-    #   when: always
+    - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_CW_DFW == "1"
+      when: always
     - when: never
   needs:
     - setup-cw-dfw
@@ -4081,8 +4083,8 @@ cs-cw-dfw-inter-debug:
     - .cw-dfw
     - .comprehensive-sweep
   rules:
-    # - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_CW_DFW == "1"
-    #   when: always
+    - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_CW_DFW == "1"
+      when: always
     - when: never
   needs:
     - setup-cw-dfw
@@ -4220,7 +4222,7 @@ cs-polyphe-inter-debug:
     NNODES: 2
 
 #############################################
-# FULL Jobs - Run only on "full" mode
+# FULL Jobs - Run on weekly pipelines or "full" mode
 # All remaining scales (excluding debug scales)
 #############################################
 
@@ -4230,8 +4232,11 @@ cs-eos-inter-full:
     - .eos
     - .comprehensive-sweep
   rules:
-    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_EOS == "1"
+    - if: $RUN_ON_EOS != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
       when: always
+    - <<: *weekly_rule
     - when: never
   needs:
     - setup-eos
@@ -4248,8 +4253,11 @@ cs-cw-dfw-inter-full:
     - .cw-dfw
     - .comprehensive-sweep
   rules:
-    # - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_CW_DFW == "1"
-    #   when: always
+    - if: $RUN_ON_CW_DFW != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
+      when: always
+    - <<: *weekly_rule
     - when: never
   needs:
     - setup-cw-dfw
@@ -4266,8 +4274,11 @@ cs-ptyche-intra-full:
     - .pre-tyche
     - .comprehensive-sweep
   rules:
-    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_PRE_TYCHE == "1"
+    - if: $RUN_ON_PRE_TYCHE != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
       when: always
+    - <<: *weekly_rule
     - when: never
   needs:
     - setup-pre-tyche
@@ -4285,8 +4296,11 @@ cs-ptyche-inter-full:
     - .pre-tyche
     - .comprehensive-sweep
   rules:
-    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_PRE_TYCHE == "1"
+    - if: $RUN_ON_PRE_TYCHE != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
       when: always
+    - <<: *weekly_rule
     - when: never
   needs:
     - setup-pre-tyche
@@ -4306,8 +4320,11 @@ cs-theia-intra-full:
     - .theia
     - .comprehensive-sweep
   rules:
-    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_THEIA == "1"
+    - if: $RUN_ON_THEIA != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
       when: always
+    - <<: *weekly_rule
     - when: never
   needs:
     - setup-theia
@@ -4324,8 +4341,11 @@ cs-theia-inter-full:
     - .theia
     - .comprehensive-sweep
   rules:
-    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_THEIA == "1"
+    - if: $RUN_ON_THEIA != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
       when: always
+    - <<: *weekly_rule
     - when: never
   needs:
     - setup-theia
@@ -4344,8 +4364,11 @@ cs-bia-inter-full:
     - .bia
     - .comprehensive-sweep
   rules:
-    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_BIA == "1"
+    - if: $RUN_ON_BIA != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
       when: always
+    - <<: *weekly_rule
     - when: never
   needs:
     - setup-bia
@@ -4363,9 +4386,12 @@ cs-polyphe-inter-full:
     - .polyphe
     - .comprehensive-sweep
   rules:
-    - when: never
-    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_POLYPHE == "1"
+    - if: $RUN_ON_POLYPHE != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
       when: always
+    - <<: *weekly_rule
+    - when: never
   needs:
     - setup-polyphe
   variables:
@@ -4604,13 +4630,12 @@ cleanup-cw-dfw:
   extends:
     - .cleanup
   rules:
-    # - <<: *post_submit_rule
-    # - <<: *pre_submit_core_rule
-    #   when: on_success
-    # - if: $RUN_ON_CW_DFW == "1"
-    #   when: on_success
-    # - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
-    #   when: on_success
+    - if: $RUN_ON_CW_DFW != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
+      when: on_success
+    - <<: *weekly_rule
+      when: on_success
     - when: never
   tags:
     - nccl-cw-dfw
