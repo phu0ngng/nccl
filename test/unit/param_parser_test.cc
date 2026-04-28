@@ -326,6 +326,28 @@ TEST(ParserTest, BitsetOf_Desc) {
   EXPECT_NE(ds.find("INIT"), std::string::npos);
 }
 
+TEST(ParserTest, BitsetOf_NegateSingle) {
+  auto parser = ncclParamBitsetOf<TestBit>(bitOptions);
+  uint32_t r;
+  ASSERT_EQ(parser.resolve("^INIT", r), ncclSuccess);
+  // All bits set except INIT (bit 0)
+  EXPECT_EQ(r & 0x0Fu, 0x0Eu);
+}
+
+TEST(ParserTest, BitsetOf_NegateMultiple) {
+  auto parser = ncclParamBitsetOf<TestBit>(bitOptions);
+  uint32_t r;
+  ASSERT_EQ(parser.resolve("^INIT,P2P", r), ncclSuccess);
+  // All bits set except INIT (bit 0) and P2P (bit 2)
+  EXPECT_EQ(r & 0x0Fu, 0x0Au);
+}
+
+TEST(ParserTest, BitsetOf_NegateInvalid) {
+  auto parser = ncclParamBitsetOf<TestBit>(bitOptions);
+  uint32_t r;
+  EXPECT_NE(parser.resolve("^BOGUS", r), ncclSuccess);
+}
+
 // ============================================================================
 // ncclParamList (unordered_set)
 // ============================================================================
