@@ -104,10 +104,12 @@ protected:
     }
 
     ncclEpHandle_t make_handle(const ncclEpHandleConfig* cfg,
-                                ncclEpDispatchMeta_t* meta = nullptr) {
+                                const ncclNDTensor_t* local_tensors = nullptr,
+                                unsigned int num_local_tensors = 0) {
         ncclEpHandle_t h = nullptr;
         EXPECT_EQ(ncclEpCreateHandle(&h, g_ep_group, topk_idx_,
-                                     cfg, meta, g_stream, false),
+                                     local_tensors, num_local_tensors,
+                                     cfg, g_stream, false),
                   ncclSuccess);
         EXPECT_EQ(cudaStreamSynchronize(g_stream), cudaSuccess);
         return h;

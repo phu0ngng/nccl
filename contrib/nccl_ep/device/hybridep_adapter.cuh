@@ -281,17 +281,11 @@ void call_metadata_preprocessing(
     int64_t* out_counts = nullptr,        // nullable: write padded counts (EXPERT_MAJOR only)
     int64_t* out_offsets = nullptr,       // nullable: write offsets (EXPERT_MAJOR only)
     size_t alignment = 0,
-    void*  perm_scratch = nullptr,        // remap scratch; must be >= get_perm_table_scratch_size() when alignment > 0
-    size_t perm_scratch_bytes = 0,
     int32_t* actual_counts_out = nullptr);  // nullable: overwrite with true per-expert dispatch counts
 
 // Returns required size in bytes for the scan temp buffer used by call_metadata_preprocessing.
 // Caller must allocate at least this many bytes and pass the pointer to call_metadata_preprocessing.
 size_t get_preprocessing_scan_tmp_size(int num_ranks_per_node);
-
-// Returns bytes needed for the remap scratch in call_metadata_preprocessing (EXPERT_MAJOR only).
-// ep_workspace must be at least this large; call from ncclEpCreateGroup where all params are known.
-size_t get_perm_table_scratch_size(int num_nodes, int max_tokens_per_rank, int num_ranks_per_node, int experts_per_rank);
 
 // ============================================================================
 // Memory region info structs for GIN

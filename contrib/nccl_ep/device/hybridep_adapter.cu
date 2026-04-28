@@ -325,8 +325,6 @@ void call_metadata_preprocessing(
     int64_t* out_counts,
     int64_t* out_offsets,
     size_t alignment,
-    void* perm_scratch,
-    size_t perm_scratch_bytes,
     int32_t* actual_counts_out
 ) {
     int32_t* counts = per_expert_token_counts;
@@ -367,8 +365,6 @@ void call_metadata_preprocessing(
                 out_counts,
                 out_offsets,
                 alignment,
-                perm_scratch,
-                perm_scratch_bytes,
                 actual_counts_out
             );
         });
@@ -377,12 +373,6 @@ void call_metadata_preprocessing(
 
 size_t get_preprocessing_scan_tmp_size(int num_ranks_per_node) {
     return HYBRIDEP_NUM_BLOCKS_PREPROCESSING * num_ranks_per_node * sizeof(::hybrid_ep::tmp_state_t);
-}
-
-size_t get_perm_table_scratch_size(int num_nodes, int max_tokens_per_rank, int num_ranks_per_node, int experts_per_rank) {
-    const size_t total_global = static_cast<size_t>(num_nodes) * max_tokens_per_rank * num_ranks_per_node;
-    // Expanded perm: [num_ranks][max_perm_slots][experts_per_rank]
-    return static_cast<size_t>(num_ranks_per_node) * total_global * experts_per_rank * sizeof(int32_t);
 }
 
 // ============================================================================

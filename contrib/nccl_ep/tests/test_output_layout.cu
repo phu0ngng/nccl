@@ -354,12 +354,12 @@ TEST_F(OutputLayoutTest, DispatchMeta) {
 
     ncclNDTensor_t t_off, t_cnt;
     NCCL_ASSERT(ncclEpTensorCreate(g_ep_group, &t_off, 1, ncclInt64,
-                                   NCCL_EP_TENSOR_TAG_NONE, d_off, E_local));
+                                   NCCL_EP_TENSOR_TAG_OFFSETS_PER_EXPERTS, d_off, E_local));
     NCCL_ASSERT(ncclEpTensorCreate(g_ep_group, &t_cnt, 1, ncclInt64,
-                                   NCCL_EP_TENSOR_TAG_NONE, d_cnt, E_local));
+                                   NCCL_EP_TENSOR_TAG_TOKENS_PER_EXPERTS, d_cnt, E_local));
 
-    ncclEpDispatchMeta_t meta{nullptr, t_cnt, t_off};
-    ncclEpHandle_t h = make_handle(&cfg, &meta);
+    ncclNDTensor_t local_tensors[] = {t_cnt, t_off};
+    ncclEpHandle_t h = make_handle(&cfg, local_tensors, 2);
     ASSERT_NE(h, nullptr);
 
     std::vector<int64_t> h_off(E_local), h_cnt(E_local);
@@ -418,10 +418,12 @@ protected:
     }
 
     ncclEpHandle_t make_handle2(const ncclEpHandleConfig* cfg,
-                                 ncclEpDispatchMeta_t* meta = nullptr) {
+                                 const ncclNDTensor_t* local_tensors = nullptr,
+                                 unsigned int num_local_tensors = 0) {
         ncclEpHandle_t h = nullptr;
         EXPECT_EQ(ncclEpCreateHandle(&h, g_ep_group, topk_idx2_,
-                                     cfg, meta, g_stream, false), ncclSuccess);
+                                     local_tensors, num_local_tensors,
+                                     cfg, g_stream, false), ncclSuccess);
         EXPECT_EQ(cudaStreamSynchronize(g_stream), cudaSuccess);
         return h;
     }

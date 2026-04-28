@@ -4096,7 +4096,13 @@ __global__ void scan(const uint8_t* input_routing_map,
                      const int local_rank,
                      const int num_of_tokens_per_rank,
                      const int num_of_ranks_per_node,
-                     const int experts_per_rank)
+                     const int experts_per_rank,
+                     // Fused remap parameters (all nullable — nullptr = skip remap)
+                     size_t remap_alignment,
+                     int64_t* remap_internal_offsets,
+                     int64_t* remap_out_counts,
+                     int64_t* remap_out_offsets,
+                     int32_t* remap_actual_counts_out)
 {
   (void)per_expert_token_counts;
   // Calculate the warps per block.
@@ -4395,13 +4401,15 @@ __global__ void scan(const uint8_t* input_routing_map,
     }
 
     // The thread that processing the global last token save the final sum for current rank to num_of_tokens_for_experts.
-    if(current_token_id == num_of_total_attn_tokens - 1 && local_rank_seen){
+    // Skip for expert-major: fused remap (Step 4) overwrites with padded zone total.
+    if(remap_alignment == 0 && current_token_id == num_of_total_attn_tokens - 1 && local_rank_seen){
       *num_of_tokens_for_experts = local_rank_prefix_after_scan;
     }
 
     // Save final exclusive scan of this token back to sparse_to_dense_map if current token is not out-of-bound and is needed.
     // Expanded S2D: write GPU-major slot at entry 0 per rank; entries 1..epr-1 stay -1 (memset).
-    if(token_out_of_bound == 0 && current_token_local_rank == local_rank){
+    // Skip for expert-major: fused remap (Step 4) overwrites S2D with em_slots.
+    if(remap_alignment == 0 && token_out_of_bound == 0 && current_token_local_rank == local_rank){
       int32_t* s2d_base = sparse_to_dense_map +
           (current_token_node_rank * num_of_tokens_per_rank + current_token_local_id) * s2d_inner_dim;
       #pragma unroll
@@ -4453,247 +4461,139 @@ __global__ void scan(const uint8_t* input_routing_map,
       *attn_to_rdma_map_base_addr = token_needed_by_this_node;
     }
   }
-}
 
-// Cooperative kernel (cudaLaunchCooperativeKernel) remapping S2D from GPU-major to expert-major.
-// Smem per block: counts[E](int32) | pos[E](int32) | offsets[E](int64) = E×16 B.
-// Phase 1 – blocks 0..num_ranks-1, thread 0: scan grm, build perm[dest*max_perm_slots+slot].
-//   Block dest==local_rank also writes ntfe_out, out_counts, out_offsets, internal_offsets,
-//   and actual_counts_out (break-on-first-match per-expert dispatch counts).
-// grid.sync() — Phase 2 – all blocks, grid-stride: rewrite s2d[tok][dest] via perm.
-__global__ static void expert_major_remap_kernel(
-    const uint8_t* __restrict__ grm,     // [total_global, experts_packed]
-    int32_t*                    s2d,     // [total_send, num_ranks * experts_per_rank] in/out
-    int32_t* __restrict__       ntfe_out, // nullable: total recv tokens at local_rank
-    int64_t*                    out_counts,       // nullable [experts_per_rank]
-    int64_t*                    out_offsets,      // nullable [experts_per_rank]
-    int64_t*                    internal_offsets, // nullable [experts_per_rank]
-    int32_t*                    actual_counts_out, // nullable [experts_per_rank]: unpadded dispatch counts
-    int32_t*                    perm,    // scratch [num_ranks * max_perm_slots * experts_per_rank]
-    int  total_global,
-    int  total_send,
-    int  max_perm_slots,
-    int  num_ranks,
-    int  experts_per_rank,
-    int  experts_packed,
-    int  local_rank,
-    int  node_rank,
-    size_t alignment)
-{
-    namespace cg = cooperative_groups;
-    extern __shared__ char smem[];
+  // ── Step 4 (fused remap): expert-major S2D rewrite ────────────────────────
+  // Only active when remap_alignment > 0 (expert-major mode).
+  // Blocks 0..num_ranks-1 each handle one dest rank; blocks >= num_ranks skip.
+  // Runs after Steps 0-3 in the same kernel, saving a kernel launch.
+  if (remap_alignment > 0 && static_cast<int>(blockIdx.x) < num_of_ranks_per_node) {
+    __syncthreads();  // ensure Step 2 smem is done before we repurpose it
 
-    // ── Phase 1: build permutation table (all threads in block cooperate) ────
     const int dest    = static_cast<int>(blockIdx.x);
     const int epr     = experts_per_rank;
-    const int nwarps  = blockDim.x / 32;
-    const int warp_id = static_cast<int>(threadIdx.x) / 32;
-    const int lane    = static_cast<int>(threadIdx.x) % 32;
+    const int remap_nwarps  = blockDim.x / 32;
+    const int remap_warp_id = static_cast<int>(threadIdx.x) / 32;
+    const int remap_lane    = static_cast<int>(threadIdx.x) % 32;
+    const int s2d_inner = num_of_ranks_per_node * epr;
+    const int total_global = num_of_total_attn_tokens;
+    const int num_exp_packed = (NUM_LSA_TEAMS * LSA_TEAM_SIZE * epr + 7) / 8;
 
-    // SMEM layout:
-    //   [0      ]: int32 s_counts[epr]
-    //   [epr*4  ]: int64 s_offsets[epr]
-    //   [epr*12 ]: int32 warp_ws[nwarps * (epr+1)]
-    //     warp_ws[w*(epr+1)+k] = warp w's total for expert k (k<epr) or gpu_slot (k==epr)
-    int32_t* s_counts  = reinterpret_cast<int32_t*>(smem);
-    int64_t* s_offsets = reinterpret_cast<int64_t*>(smem + epr * sizeof(int32_t));
-    int32_t* warp_ws   = reinterpret_cast<int32_t*>(smem + epr * (sizeof(int32_t) + sizeof(int64_t)));
+    // Repurpose smem for remap: s_offsets[epr] + warp_ws[nwarps*epr]
+    int64_t* s_offsets = reinterpret_cast<int64_t*>(smem_bytes);
+    int32_t* warp_ws   = reinterpret_cast<int32_t*>(smem_bytes + epr * sizeof(int64_t));
 
-    if (dest < num_ranks) {
-        // dest is an intra-node rank; add the node's expert offset for multi-node.
-        const int expert_base = (node_rank * num_ranks + dest) * epr;
+    // dest is an intra-node rank; add the node's expert offset for multi-node.
+    const int expert_base = (node_rank * num_of_ranks_per_node + dest) * epr;
 
-        // ── Sub-pass A: count tokens per expert (stride-based, coalesced GRM reads) ──
-        // All threads stride through GRM in parallel; each warp reduces to a per-expert sum.
-        // IMPORTANT: counts ALL matching experts (no break-on-first-match) so that zone
-        // offsets and within-zone em_slot positions are consistent across ALL ranks.
-        // Remote S2G uses these same em_slots when writing to the dest rank's buffer.
-        int lc[HYBRIDEP_REMAP_MAX_LOCAL_EXPERTS] = {};
-        int lg = 0;
-        for (int tok = static_cast<int>(threadIdx.x); tok < total_global; tok += static_cast<int>(blockDim.x)) {
-            const uint8_t* row = grm + static_cast<size_t>(tok) * experts_packed;
-            bool any = false;
-            for (int k = 0; k < epr; k++) {
-                const int ge = expert_base + k;
-                if ((row[ge >> 3] >> (ge & 7)) & 1) {
-                    lc[k]++;
-                    any = true;
-                    // No break: count ALL matching experts so zone offsets are
-                    // consistent across all ranks (including secondaries from
-                    // same-rank multi-expert routing).
-                }
-            }
-            if (any) lg++;
+    // ── Prefix scan + zone offset computation (merged Sub-pass A+B) ──────
+    const int W       = (total_global + remap_nwarps - 1) / remap_nwarps;
+    const int w_start = remap_warp_id * W;
+    const int w_end   = min(w_start + W, total_global);
+    const int L       = (W + 31) / 32;
+    const int l_start = w_start + remap_lane * L;
+    const int l_end   = min(l_start + L, w_end);
+
+    // Count this lane's sub-chunk per expert.
+    int mc[HYBRIDEP_LCP_MAX_LOCAL_EXPERTS] = {};
+    for (int tok = l_start; tok < l_end; tok++) {
+      const uint8_t* row = input_routing_map + static_cast<size_t>(tok) * num_exp_packed;
+      for (int k = 0; k < epr; k++) {
+        const int ge = expert_base + k;
+        if ((row[ge >> 3] >> (ge & 7)) & 1) {
+          mc[k]++;
         }
-
-        // Warp reduce: lane 0 accumulates per-expert totals and gpu_slot count.
-        for (int k = 0; k < epr; k++)
-            for (int off = 16; off > 0; off >>= 1)
-                lc[k] += __shfl_down_sync(0xffffffff, lc[k], off);
-        for (int off = 16; off > 0; off >>= 1)
-            lg += __shfl_down_sync(0xffffffff, lg, off);
-        if (lane == 0) {
-            for (int k = 0; k < epr; k++)
-                warp_ws[warp_id * (epr + 1) + k] = lc[k];
-            warp_ws[warp_id * (epr + 1) + epr] = lg;
-        }
-        __syncthreads();
-
-        // Thread 0: inter-warp reduce → s_counts, compute zone offsets, write outputs.
-        if (threadIdx.x == 0) {
-            int32_t total_gpu_slots = 0;
-            for (int w = 0; w < nwarps; w++) total_gpu_slots += warp_ws[w * (epr + 1) + epr];
-            for (int k = 0; k < epr; k++) {
-                int32_t tot = 0;
-                for (int w = 0; w < nwarps; w++) tot += warp_ws[w * (epr + 1) + k];
-                s_counts[k] = tot;
-            }
-            int64_t off = 0;
-            for (int k = 0; k < epr; k++) {
-                s_offsets[k] = off;
-                const int64_t c = static_cast<int64_t>(s_counts[k]);
-                // Empty experts always get at least one alignment-sized slot so callers
-                // can rely on num_recv = num_experts * alignment when alignment > 1.
-                const int64_t padded = (alignment > 1)
-                    ? (c == 0 ? static_cast<int64_t>(alignment)
-                              : ((c + static_cast<int64_t>(alignment) - 1) /
-                                  static_cast<int64_t>(alignment)) * static_cast<int64_t>(alignment))
-                    : c;
-                if (dest == local_rank) {
-                    if (out_counts)        out_counts[k]        = padded;
-                    if (out_offsets)       out_offsets[k]       = off;
-                    if (internal_offsets)  internal_offsets[k]  = off;
-                    // Write the actual (unpadded) dispatch count including secondaries.
-                    if (actual_counts_out) actual_counts_out[k] = static_cast<int32_t>(c);
-                }
-                off += padded;
-            }
-            if (dest == local_rank && ntfe_out)
-                *ntfe_out = static_cast<int32_t>(off);
-        }
-        __syncthreads();
-
-        // ── Sub-pass B: assign perm entries (warp-cooperative, contiguous token ranges) ──
-        // Each warp owns a contiguous range [w_start, w_end); each lane owns a sub-chunk.
-        // Correct em_slot ordering is preserved by: exclusive prefix scan within the warp
-        // (register-only, via __shfl_up_sync) + inter-warp exclusive prefix (via smem).
-        const int W       = (total_global + nwarps - 1) / nwarps;
-        const int w_start = warp_id * W;
-        const int w_end   = min(w_start + W, total_global);
-        const int L       = (W + 31) / 32;
-        const int l_start = w_start + lane * L;
-        const int l_end   = min(l_start + L, w_end);
-
-        // B1: count this lane's sub-chunk per expert and for gpu_slot.
-        int mc[HYBRIDEP_REMAP_MAX_LOCAL_EXPERTS] = {};
-        int mg = 0;
-        for (int tok = l_start; tok < l_end; tok++) {
-            const uint8_t* row = grm + static_cast<size_t>(tok) * experts_packed;
-            bool any = false;
-            for (int k = 0; k < epr; k++) {
-                const int ge = expert_base + k;
-                if ((row[ge >> 3] >> (ge & 7)) & 1) {
-                    mc[k]++;
-                    any = true;
-                }
-            }
-            if (any) mg++;
-        }
-
-        // Warp-level inclusive prefix scan (in registers); repurpose mc to hold the
-        // exclusive prefix within the warp; lane 0 writes warp totals to warp_ws.
-        for (int k = 0; k < epr; k++) {
-            int v = mc[k];
-            for (int off = 1; off < 32; off <<= 1) {
-                int n = __shfl_up_sync(0xffffffff, v, off);
-                if (lane >= off) v += n;
-            }
-            // v is now the inclusive prefix; broadcast lane 31's value (warp total) to lane 0.
-            // All lanes must participate in __shfl_sync — do NOT put it inside if(lane==0).
-            int _wt = __shfl_sync(0xffffffff, v, 31);
-            if (lane == 0) warp_ws[warp_id * (epr + 1) + k] = _wt;
-            int _ep = __shfl_up_sync(0xffffffff, v, 1);
-            mc[k] = (lane == 0) ? 0 : _ep;
-        }
-        {
-            int v = mg;
-            for (int off = 1; off < 32; off <<= 1) {
-                int n = __shfl_up_sync(0xffffffff, v, off);
-                if (lane >= off) v += n;
-            }
-            int _wt2 = __shfl_sync(0xffffffff, v, 31);
-            if (lane == 0) warp_ws[warp_id * (epr + 1) + epr] = _wt2;
-            int _ep2 = __shfl_up_sync(0xffffffff, v, 1);
-            mg = (lane == 0) ? 0 : _ep2;
-        }
-        __syncthreads();
-
-        // Thread 0: inter-warp exclusive prefix scan; overwrite warp_ws with each warp's
-        // starting slot (= sum of totals from all prior warps).
-        if (threadIdx.x == 0) {
-            int running[HYBRIDEP_REMAP_MAX_LOCAL_EXPERTS + 1] = {};
-            for (int w = 0; w < nwarps; w++) {
-                for (int k = 0; k <= epr; k++) {
-                    const int cnt = warp_ws[w * (epr + 1) + k];
-                    warp_ws[w * (epr + 1) + k] = running[k];
-                    running[k] += cnt;
-                }
-            }
-        }
-        __syncthreads();
-
-        // Each lane: absolute starting slot = zone_offset + warp_start + lane_exclusive_prefix.
-        int cur_expert_slot[HYBRIDEP_REMAP_MAX_LOCAL_EXPERTS];
-        for (int k = 0; k < epr; k++)
-            cur_expert_slot[k] = static_cast<int>(s_offsets[k])
-                                + warp_ws[warp_id * (epr + 1) + k] + mc[k];
-        int cur_gpu_slot = warp_ws[warp_id * (epr + 1) + epr] + mg;
-
-        // B2: write perm[dest][gpu_slot][k] = em_slot for ALL routed experts per token.
-        // Expanded perm layout: perm[dest * max_perm_slots * epr + gpu_slot * epr + k].
-        // Perm is pre-initialized to -1; only routed experts get a valid em_slot.
-        for (int tok = l_start; tok < l_end; tok++) {
-            const uint8_t* row = grm + static_cast<size_t>(tok) * experts_packed;
-            bool primary_assigned = false;
-            int perm_base = 0;  // perm offset for this token's gpu_slot
-            for (int k = 0; k < epr; k++) {
-                const int ge = expert_base + k;
-                if ((row[ge >> 3] >> (ge & 7)) & 1) {
-                    const int em_slot = cur_expert_slot[k]++;
-                    if (!primary_assigned) {
-                        perm_base = dest * max_perm_slots * epr + cur_gpu_slot * epr;
-                        cur_gpu_slot++;
-                        primary_assigned = true;
-                    }
-                    perm[perm_base + k] = em_slot;
-                }
-            }
-        }
-    }  // if (dest < num_ranks)
-
-    cg::this_grid().sync();
-
-    // ── Phase 2: apply permutation to expanded S2D ─────────────────────────
-    // S2D layout: [total_send, num_ranks * epr]. Entry 0 per rank holds the
-    // GPU-major slot from the scan; entries 1..epr-1 are -1 (from memset).
-    // We read the GPU-major slot from entry 0, then overwrite ALL epr entries
-    // with perm values (expert-major slots). This clears the stale GPU-major
-    // value from entry 0.
-    const int epr_phase2 = experts_per_rank;
-    const int s2d_inner = num_ranks * epr_phase2;
-    const int stride = gridDim.x * blockDim.x;
-    for (int idx = blockIdx.x * blockDim.x + threadIdx.x; idx < total_send; idx += stride) {
-        for (int d = 0; d < num_ranks; d++) {
-            // Read GPU-major slot from entry 0 of this (token, rank) group
-            int32_t slot = s2d[idx * s2d_inner + d * epr_phase2];
-            if (slot < 0) continue;  // not routed; all epr entries already -1
-            // Overwrite all epr entries including entry 0
-            const int perm_base = d * max_perm_slots * epr_phase2 + slot * epr_phase2;
-            for (int k = 0; k < epr_phase2; k++) {
-                s2d[idx * s2d_inner + d * epr_phase2 + k] = perm[perm_base + k];
-            }
-        }
+      }
     }
+
+    // Warp-level inclusive prefix scan; repurpose mc to exclusive prefix.
+    for (int k = 0; k < epr; k++) {
+      int v = mc[k];
+      for (int off = 1; off < 32; off <<= 1) {
+        int n = __shfl_up_sync(0xffffffff, v, off);
+        if (remap_lane >= off) v += n;
+      }
+      int _wt = __shfl_sync(0xffffffff, v, 31);
+      if (remap_lane == 0) warp_ws[remap_warp_id * epr + k] = _wt;
+      int _ep = __shfl_up_sync(0xffffffff, v, 1);
+      mc[k] = (remap_lane == 0) ? 0 : _ep;
+    }
+    __syncthreads();
+
+    // Thread 0: inter-warp exclusive prefix scan + zone offset computation.
+    if (threadIdx.x == 0) {
+      int running[HYBRIDEP_LCP_MAX_LOCAL_EXPERTS] = {};
+      for (int w = 0; w < remap_nwarps; w++) {
+        for (int k = 0; k < epr; k++) {
+          const int cnt = warp_ws[w * epr + k];
+          warp_ws[w * epr + k] = running[k];
+          running[k] += cnt;
+        }
+      }
+      int64_t off = 0;
+      for (int k = 0; k < epr; k++) {
+        s_offsets[k] = off;
+        const int64_t c = static_cast<int64_t>(running[k]);
+        const int64_t padded = (remap_alignment > 1)
+            ? (c == 0 ? static_cast<int64_t>(remap_alignment)
+                      : ((c + static_cast<int64_t>(remap_alignment) - 1) /
+                          static_cast<int64_t>(remap_alignment)) * static_cast<int64_t>(remap_alignment))
+            : c;
+        if (dest == local_rank) {
+          if (remap_out_counts)        remap_out_counts[k]        = padded;
+          if (remap_out_offsets)       remap_out_offsets[k]       = off;
+          if (remap_internal_offsets)  remap_internal_offsets[k]  = off;
+          if (remap_actual_counts_out) remap_actual_counts_out[k] = static_cast<int32_t>(c);
+        }
+        off += padded;
+      }
+      if (dest == local_rank && num_of_tokens_for_experts)
+        *num_of_tokens_for_experts = static_cast<int32_t>(off);
+    }
+    __syncthreads();
+
+    // Each lane: absolute starting slot.
+    int cur_expert_slot[HYBRIDEP_LCP_MAX_LOCAL_EXPERTS];
+    for (int k = 0; k < epr; k++)
+      cur_expert_slot[k] = static_cast<int>(s_offsets[k])
+                          + warp_ws[remap_warp_id * epr + k] + mc[k];
+
+    // ── em_slot assignment + direct S2D write ────────────────────────────
+    for (int tok = l_start; tok < l_end; tok++) {
+      const uint8_t* row = input_routing_map + static_cast<size_t>(tok) * num_exp_packed;
+      bool primary_assigned = false;
+
+      const int source_global_rank = tok / num_of_tokens_per_rank;
+      const int source_node = source_global_rank / num_of_ranks_per_node;
+      const int source_local_rank = source_global_rank % num_of_ranks_per_node;
+      const int local_token_id = tok % num_of_tokens_per_rank;
+      const bool is_our_send_token = (source_node == node_rank
+                                      && source_local_rank == local_rank);
+
+      int32_t* s2d_entry = nullptr;
+      if (is_our_send_token) {
+        const int send_idx = source_node * num_of_tokens_per_rank + local_token_id;
+        s2d_entry = sparse_to_dense_map + send_idx * s2d_inner + dest * epr;
+      }
+
+      for (int k = 0; k < epr; k++) {
+        const int ge = expert_base + k;
+        if ((row[ge >> 3] >> (ge & 7)) & 1) {
+          const int em_slot = cur_expert_slot[k]++;
+          if (!primary_assigned) {
+            if (is_our_send_token) {
+              if (k > 0) s2d_entry[0] = -1;
+              s2d_entry[k] = em_slot;
+            }
+            primary_assigned = true;
+          } else {
+            // Secondary: write em_slot for ALL matched experts (no -2 marker on this branch).
+            if (is_our_send_token) s2d_entry[k] = em_slot;
+          }
+        }
+      }
+      (void)primary_assigned;
+    }
+  }  // end Step 4 (fused remap)
 }
 
 template<
@@ -4749,8 +4649,6 @@ public:
                                      int64_t* out_counts = nullptr,
                                      int64_t* out_offsets = nullptr,
                                      size_t alignment = 0,
-                                     void* perm_scratch = nullptr,
-                                     size_t perm_scratch_bytes = 0,
                                      int32_t* actual_counts_out = nullptr)
   {
     // Init preprocessing_tmp buffers.
@@ -4764,68 +4662,37 @@ public:
     // function pointers, bypassing CUDA's fragile static kernel registration tables.
     SETUP_LAUNCH_CONFIG(NUM_OF_BLOCKS, NUM_THREADS_PER_BLOCK, stream);
     // Calculate dynamic shared memory size for scan kernel.
+    // Must accommodate both scan steps (0-3) and fused remap step (4).
     constexpr int NUM_OF_WARPS_PER_BLOCK_SCAN = NUM_THREADS_PER_BLOCK / 32;
-    const size_t scan_base_smem_size =
+    const size_t scan_smem_size =
         (NUM_OF_WARPS_PER_BLOCK_SCAN * num_of_ranks_per_node * sizeof(int32_t)) +
-        (num_of_ranks_per_node * sizeof(int32_t));
+        (num_of_ranks_per_node * sizeof(int32_t)) +
+        (per_expert_token_counts != nullptr ? experts_per_rank * sizeof(int32_t) : 0);
+    // Fused remap Step 4 smem: s_offsets[epr] + warp_ws[nwarps*epr]
+    const size_t remap_smem_size = (alignment > 0)
+        ? (static_cast<size_t>(experts_per_rank) * sizeof(int64_t) +
+           static_cast<size_t>(NUM_OF_WARPS_PER_BLOCK_SCAN) * experts_per_rank * sizeof(int32_t))
+        : 0;
+    cfg.dynamicSmemBytes = (scan_smem_size > remap_smem_size) ? scan_smem_size : remap_smem_size;
+
     if (per_expert_token_counts != nullptr) {
-      cfg.dynamicSmemBytes = scan_base_smem_size + (experts_per_rank * sizeof(int32_t));
       auto scan_kernel_ptr = scan<NUM_THREADS_PER_BLOCK, NUM_OF_BLOCKS, NUM_LSA_TEAMS, LSA_TEAM_SIZE, true>;
       LAUNCH_KERNEL(&cfg, scan_kernel_ptr,
                     input_routing_map, preprocessing_tmp, sparse_to_dense_map,
                     rdma_to_attn_map, attn_to_rdma_map, token_rank_mask, num_of_tokens_for_experts,
                     local_expert_routing_map, per_expert_token_counts, node_rank, local_rank,
-                    num_of_tokens_per_rank, num_of_ranks_per_node, experts_per_rank);
+                    num_of_tokens_per_rank, num_of_ranks_per_node, experts_per_rank,
+                    alignment, internal_offsets, out_counts, out_offsets,
+                    actual_counts_out);
     } else {
-      cfg.dynamicSmemBytes = scan_base_smem_size;
       auto scan_kernel_ptr = scan<NUM_THREADS_PER_BLOCK, NUM_OF_BLOCKS, NUM_LSA_TEAMS, LSA_TEAM_SIZE, false>;
       LAUNCH_KERNEL(&cfg, scan_kernel_ptr,
                     input_routing_map, preprocessing_tmp, sparse_to_dense_map,
                     rdma_to_attn_map, attn_to_rdma_map, token_rank_mask, num_of_tokens_for_experts,
                     local_expert_routing_map, static_cast<int32_t*>(nullptr), node_rank, local_rank,
-                    num_of_tokens_per_rank, num_of_ranks_per_node, experts_per_rank);
-    }
-
-    // alignment == 0 → GPU-major (skip remap).
-    // alignment >= 1 → expert-major; caller normalizes 0→1 for no-padding case.
-    if (alignment > 0) {
-      const int num_exp_packed = (NUM_LSA_TEAMS * LSA_TEAM_SIZE * experts_per_rank + 7) / 8;
-      const int     total_send     = NUM_LSA_TEAMS * num_of_tokens_per_rank;
-      const int     total_global   = total_send * LSA_TEAM_SIZE;
-      const int     max_perm_slots = total_global;
-      const size_t  perm_bytes     =
-          static_cast<size_t>(LSA_TEAM_SIZE) * max_perm_slots * experts_per_rank * sizeof(int32_t);
-
-      EP_HOST_ASSERT(perm_scratch != nullptr && perm_scratch_bytes >= perm_bytes &&
-          "metadata_preprocessing: ep_workspace too small for expert-major perm table");
-
-      int32_t*     perm_table  = static_cast<int32_t*>(perm_scratch);
-      // Initialize perm to -1 so un-routed expert entries remain sentinel.
-      CUDA_CHECK(cudaMemsetAsync(perm_table, 0xFF, perm_bytes, stream));
-      // smem layout: s_counts[epr] + s_offsets[epr] + warp_ws[nwarps*(epr+1)]
-      constexpr int nwarps_remap = NUM_THREADS_PER_BLOCK / 32;
-      const size_t smem_bytes  =
-          static_cast<size_t>(experts_per_rank) * (sizeof(int32_t) + sizeof(int64_t)) +
-          static_cast<size_t>(nwarps_remap) * (experts_per_rank + 1) * sizeof(int32_t);
-
-      void* remap_args[] = {
-          (void*)&input_routing_map,
-          (void*)&sparse_to_dense_map,
-          (void*)&num_of_tokens_for_experts,
-          (void*)&out_counts, (void*)&out_offsets, (void*)&internal_offsets,
-          (void*)&actual_counts_out,
-          (void*)&perm_table,
-          (void*)&total_global, (void*)&total_send, (void*)&max_perm_slots,
-          (void*)&num_of_ranks_per_node, (void*)&experts_per_rank, (void*)&num_exp_packed,
-          (void*)&local_rank,
-          (void*)&node_rank,
-          (void*)&alignment,
-      };
-      CUDA_CHECK(cudaLaunchCooperativeKernel(
-          reinterpret_cast<void*>(expert_major_remap_kernel),
-          HYBRIDEP_MAX_NUM_SMS_PER_RANK,
-          NUM_THREADS_PER_BLOCK,
-          remap_args, smem_bytes, stream));
+                    num_of_tokens_per_rank, num_of_ranks_per_node, experts_per_rank,
+                    alignment, internal_offsets, out_counts, out_offsets,
+                    actual_counts_out);
     }
   }
 

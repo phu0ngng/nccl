@@ -966,11 +966,8 @@ ncclResult_t ncclEpCreateGroup(
     CUDA_CHECK(cudaGetDeviceProperties(&device_prop, ep_group->cuda_device_id));
     ep_group->device_sm_count = device_prop.multiProcessorCount;
 
-    // Size workspace to cover both the base HybridEP scratch and the expert-major remap scratch.
-    const size_t perm_sz = nccl_ep::hybridep::get_perm_table_scratch_size(
-        ep_group->nNodes, static_cast<int>(in_config->max_tokens_per_rank), ep_group->gpus_per_node,
-        ep_group->num_local_experts);
-    const size_t workspace_sz = std::max(static_cast<size_t>(NUM_WORKSPACE_BYTES), perm_sz);
+    // Workspace for HybridEP scratch (remap no longer needs perm table).
+    const size_t workspace_sz = static_cast<size_t>(NUM_WORKSPACE_BYTES);
     ep_group->ep_workspace_bytes = workspace_sz;
     CUDA_CHECK(ep_group->alloc_fn(&ep_group->ep_workspace, workspace_sz));
     CUDA_CHECK(cudaMemsetAsync(ep_group->ep_workspace, 0, workspace_sz, stream));
@@ -1697,6 +1694,16 @@ ncclResult_t ncclEpUpdateHandle(
     // ===== Step 3: Run metadata_preprocessing =====
     const bool expert_major = (handle->hybridep.dispatch_output_layout == NCCL_EP_OUTPUT_LAYOUT_EXPERT_MAJOR);
 
+    // Optional: per-expert counts/offsets output tensors
+    ncclNDTensor_t tokens_per_experts_tensor = (num_local_tensors > 0)
+        ? find_tensor_by_tag(local_tensors, num_local_tensors, NCCL_EP_TENSOR_TAG_TOKENS_PER_EXPERTS)
+        : nullptr;
+    ncclNDTensor_t offsets_per_experts_tensor = (num_local_tensors > 0)
+        ? find_tensor_by_tag(local_tensors, num_local_tensors, NCCL_EP_TENSOR_TAG_OFFSETS_PER_EXPERTS)
+        : nullptr;
+    int64_t* out_counts = tokens_per_experts_tensor ? static_cast<int64_t*>(tokens_per_experts_tensor->data) : nullptr;
+    int64_t* out_offsets = offsets_per_experts_tensor ? static_cast<int64_t*>(offsets_per_experts_tensor->data) : nullptr;
+
     int32_t* per_expert_counts_device = nullptr;
     if (recv_expert_counter != nullptr) {
         assert(recv_expert_counter->ndim == 1 && "recv_expert_counter must be 1D");
@@ -1729,13 +1736,11 @@ ncclResult_t ncclEpUpdateHandle(
         experts_per_rank,
         stream,
         expert_major ? handle->hybridep.expert_token_offsets : nullptr,
-        nullptr,  // out_counts written via ncclEpCreateHandle out_meta
-        nullptr,  // out_offsets written via ncclEpCreateHandle out_meta
+        out_counts,
+        out_offsets,
         expert_major
             ? std::max<size_t>(1, handle->hybridep.dispatch_output_per_expert_alignment)
             : size_t(0),
-        ep_group->ep_workspace,
-        ep_group->ep_workspace_bytes,
         // Overwrite per_expert_counts with the remap kernel's break-on-first-match counts.
         // The scan kernel overcounts experts that are "secondary" hits for tokens with
         // multiple expert bits set per rank; the remap kernel is authoritative.
@@ -2261,8 +2266,6 @@ ncclResult_t ncclEpDispatch(
                 counts_dst,
                 offsets_dst,
                 std::max<size_t>(1, handle->hybridep.dispatch_output_per_expert_alignment),
-                group->ep_workspace,
-                group->ep_workspace_bytes,
                 handle->hybridep.per_expert_counts_tmp);
         }
 
