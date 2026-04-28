@@ -323,7 +323,7 @@ int main(int argc, char* argv[])
 
   printf("Rank %d: Testing ncclEpCreateHandle\n", myRank);
   ncclEpHandle_t ep_handle;
-  NCCLCHECK(ncclEpCreateHandle(&ep_handle, ep_group, topk_idx, nullptr, nullptr, s));
+  NCCLCHECK(ncclEpCreateHandle(&ep_handle, ep_group, topk_idx, nullptr, nullptr, 0, s));
   CUDACHECK(cudaStreamSynchronize(s));
 
   unsigned int num_recv_tokens = 0;

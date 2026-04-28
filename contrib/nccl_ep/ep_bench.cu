@@ -2387,7 +2387,7 @@ int main(int argc, char* argv[]) {
 
     MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
     double handle_create_start = MPI_Wtime();
-    NCCLCHECK(ncclEpCreateHandle(&ep_handle, ep_group, topk_idx, cfg_ptr, stream, use_fp8));
+    NCCLCHECK(ncclEpCreateHandle(&ep_handle, ep_group, topk_idx, cfg_ptr, nullptr, 0, stream, use_fp8));
     CUDACHECK(cudaStreamSynchronize(stream));
     double handle_create_end = MPI_Wtime();
     double handle_create_ms = (handle_create_end - handle_create_start) * 1000.0;
@@ -2518,7 +2518,7 @@ int main(int argc, char* argv[]) {
         auto handle_create_fn = [&]() {
             NCCLCHECK(ncclEpHandleDestroy(ep_handle));
             NCCLCHECK(ncclEpCreateHandle(&ep_handle, ep_group, topk_idx,
-                                          cfg_ptr, nullptr, stream, use_fp8));
+                                          cfg_ptr, nullptr, 0, stream, use_fp8));
         };
         runNvtxProfiling(myRank, actual_iters, dispatch_fn, combine_fn, handle_create_fn, stream);
     }

@@ -186,12 +186,14 @@ typedef struct ncclEpHandleConfig* ncclEpHandleConfig_t;
 //   * This call is collective and must be invoked by all ranks in the group.
 //
 // Arguments:
-//   handle    - [OUT] Newly created EP handle
-//   ep_group  - [IN]  A valid EP group
-//   topk_idx  - [IN]  Routing tensor: SPARSE [num_tokens, top_k] int64
-//   config    - [IN]  Optional handle config (NULL uses defaults)
-//   stream    - [IN]  CUDA stream
-//   use_fp8   - [IN]  Enable FP8 for dispatch (default: false)
+//   handle              - [OUT] Newly created EP handle
+//   ep_group            - [IN]  A valid EP group
+//   topk_idx            - [IN]  Routing tensor: SPARSE [num_tokens, top_k] int64
+//   config              - [IN]  Optional handle config (NULL uses defaults)
+//   local_tensors       - [IN/OUT, optional] Array of local tensors (e.g. per-expert counts/offsets)
+//   num_local_tensors   - [IN]  Number of local tensors
+//   stream              - [IN]  CUDA stream
+//   use_fp8             - [IN]  Enable FP8 for dispatch (default: false)
 //
 // Returns: ncclResult_t error code
 
@@ -200,6 +202,8 @@ ncclResult_t ncclEpCreateHandle(
     ncclEpGroup_t                ep_group,
     ncclNDTensor_t               topk_idx,
     const ncclEpHandleConfig*    config,
+    const ncclNDTensor_t*        local_tensors,
+    unsigned int                 num_local_tensors,
     cudaStream_t                 stream,
     bool                         use_fp8 = false
 );
