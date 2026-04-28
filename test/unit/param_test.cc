@@ -386,14 +386,14 @@ TEST_F(NcclParamTest, DumpAllFlag_SetFromEnv) {
 // ============================================================================
 
 TEST_F(NcclParamTest, CApi_BindSuccess) {
-  ncclParamHandle_t* h = nullptr;
+  ncclParamHandle_t h = nullptr;
   EXPECT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), ncclSuccess);
   EXPECT_NE(h, nullptr);
 }
 
 TEST_F(NcclParamTest, CApi_NotFoundErrors) {
   // Bind
-  ncclParamHandle_t* h = nullptr;
+  ncclParamHandle_t h = nullptr;
   EXPECT_EQ(ncclParamBind(&h, "TEST_NONEXISTENT_KEY_XYZ"), ncclInvalidArgument);
 
   // GetParameter
@@ -403,7 +403,7 @@ TEST_F(NcclParamTest, CApi_NotFoundErrors) {
 }
 
 TEST_F(NcclParamTest, CApi_TypedGetI32) {
-  ncclParamHandle_t* h = nullptr;
+  ncclParamHandle_t h = nullptr;
   ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), ncclSuccess);
 
   int32_t val = 0;
@@ -412,7 +412,7 @@ TEST_F(NcclParamTest, CApi_TypedGetI32) {
 }
 
 TEST_F(NcclParamTest, CApi_TypeMismatch) {
-  ncclParamHandle_t* h = nullptr;
+  ncclParamHandle_t h = nullptr;
   ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), ncclSuccess);
 
   int64_t val = 0;
@@ -420,11 +420,11 @@ TEST_F(NcclParamTest, CApi_TypeMismatch) {
 }
 
 TEST_F(NcclParamTest, CApi_NullArgErrors) {
-  ncclParamHandle_t* h = nullptr;
+  ncclParamHandle_t h = nullptr;
   ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), ncclSuccess);
 
   // Bind null args
-  ncclParamHandle_t* h2 = nullptr;
+  ncclParamHandle_t h2 = nullptr;
   EXPECT_EQ(ncclParamBind(nullptr, "TEST_CAPI_INT"), ncclInvalidArgument);
   EXPECT_EQ(ncclParamBind(&h2, nullptr), ncclInvalidArgument);
 
@@ -450,7 +450,7 @@ TEST_F(NcclParamTest, CApi_NullArgErrors) {
 TEST_F(NcclParamTest, CApi_GetStr) {
   SetEnv("TEST_CAPI_STRING", "/tmp/getstr.log");
 
-  ncclParamHandle_t* h = nullptr;
+  ncclParamHandle_t h = nullptr;
   ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_STRING"), ncclSuccess);
 
   const char* str = nullptr;
@@ -459,7 +459,7 @@ TEST_F(NcclParamTest, CApi_GetStr) {
   EXPECT_STREQ(str, "/tmp/getstr.log");
 
   // Type mismatch: GetStr on a non-string param
-  ncclParamHandle_t* hInt = nullptr;
+  ncclParamHandle_t hInt = nullptr;
   ASSERT_EQ(ncclParamBind(&hInt, "TEST_CAPI_INT"), ncclSuccess);
   EXPECT_EQ(ncclParamGetStr(hInt, &str), ncclInvalidArgument);
 }
@@ -497,7 +497,7 @@ TEST_F(NcclParamTest, CApi_GetAllParameterKeys) {
 TEST_F(NcclParamTest, CApi_StringParam) {
   SetEnv("TEST_CAPI_STRING", "/tmp/test.log");
 
-  ncclParamHandle_t* h = nullptr;
+  ncclParamHandle_t h = nullptr;
   ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_STRING"), ncclSuccess);
 
   // GetStr returns the string value
@@ -512,7 +512,7 @@ TEST_F(NcclParamTest, CApi_StringParam) {
 // ============================================================================
 
 TEST_F(NcclParamTest, CApi_GetRawInt32) {
-  ncclParamHandle_t* h = nullptr;
+  ncclParamHandle_t h = nullptr;
   ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), ncclSuccess);
 
   int32_t val = 0;
@@ -523,7 +523,7 @@ TEST_F(NcclParamTest, CApi_GetRawInt32) {
 }
 
 TEST_F(NcclParamTest, CApi_GetRawInt64) {
-  ncclParamHandle_t* h = nullptr;
+  ncclParamHandle_t h = nullptr;
   ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_LONG"), ncclSuccess);
 
   int64_t val = 0;
@@ -536,7 +536,7 @@ TEST_F(NcclParamTest, CApi_GetRawInt64) {
 TEST_F(NcclParamTest, CApi_GetRawString) {
   SetEnv("TEST_CAPI_STRING", "/tmp/test.log");
 
-  ncclParamHandle_t* h = nullptr;
+  ncclParamHandle_t h = nullptr;
   ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_STRING"), ncclSuccess);
 
   char buf[256] = {};
@@ -548,7 +548,7 @@ TEST_F(NcclParamTest, CApi_GetRawString) {
 
 // const char* param with null default: raw copy yields a single '\0' byte
 TEST_F(NcclParamTest, CApi_GetRawStringNullDefault) {
-  ncclParamHandle_t* h = nullptr;
+  ncclParamHandle_t h = nullptr;
   ASSERT_EQ(ncclParamBind(&h, "TEST_STRING_DEFAULT"), ncclSuccess);
 
   char buf[16];
@@ -560,7 +560,7 @@ TEST_F(NcclParamTest, CApi_GetRawStringNullDefault) {
 }
 
 TEST_F(NcclParamTest, CApi_GetRawBufferTooSmall) {
-  ncclParamHandle_t* h = nullptr;
+  ncclParamHandle_t h = nullptr;
   ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), ncclSuccess);
 
   int8_t small = 0;
@@ -572,7 +572,7 @@ TEST_F(NcclParamTest, CApi_GetRawBufferTooSmall) {
 TEST_F(NcclParamTest, CApi_GetRawStringBufferTooSmall) {
   SetEnv("TEST_CAPI_STRING", "hello");
 
-  ncclParamHandle_t* h = nullptr;
+  ncclParamHandle_t h = nullptr;
   ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_STRING"), ncclSuccess);
 
   char tiny[2] = {};
@@ -583,7 +583,7 @@ TEST_F(NcclParamTest, CApi_GetRawStringBufferTooSmall) {
 }
 
 TEST_F(NcclParamTest, CApi_GetRawNullArgs) {
-  ncclParamHandle_t* h = nullptr;
+  ncclParamHandle_t h = nullptr;
   ASSERT_EQ(ncclParamBind(&h, "TEST_CAPI_INT"), ncclSuccess);
 
   int32_t val = 0;
