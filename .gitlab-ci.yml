@@ -330,7 +330,10 @@ build-pre-tyche:
         NCCL_TEST_REDUCE_COPY_TYPES: "all"
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
+    - <<: *pre_submit_nccl_ep_rule
     - if: $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - if: $RUN_NCCL_EP_CI == "1"
       when: always
     - when: never
   script:
@@ -539,7 +542,10 @@ setup-pre-tyche:
   rules:
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
+    - <<: *pre_submit_nccl_ep_rule
     - if: $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - if: $RUN_NCCL_EP_CI == "1"
       when: always
     - when: never
   needs: ["build-pre-tyche"]
@@ -732,6 +738,7 @@ nccl_ep_ci:
     - setup-ipp6
     - setup-eos
     - setup-pre-nyx
+    - setup-pre-tyche
   rules:
     - <<: *post_submit_rule
     - <<: *pre_submit_nccl_ep_rule
@@ -4734,7 +4741,11 @@ cleanup-pre-tyche:
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
       when: on_success
+    - <<: *pre_submit_nccl_ep_rule
+      when: on_success
     - if: $RUN_ON_PRE_TYCHE == "1"
+      when: on_success
+    - if: $RUN_NCCL_EP_CI == "1"
       when: on_success
     - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
       when: on_success
@@ -4744,6 +4755,8 @@ cleanup-pre-tyche:
     - job: build-pre-tyche
       optional: true
     - job: setup-pre-tyche
+      optional: true
+    - job: nccl_ep_ci
       optional: true
     - job: unit-tests-pre-tyche
       optional: true
