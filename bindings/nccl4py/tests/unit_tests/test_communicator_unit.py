@@ -746,7 +746,9 @@ def test_nccl_dev_comm_requirements_struct_layout():
     #   bool ginExclusiveContexts;                    // uint8: offset 76, size 1
     #   // [padding 3 bytes: offset 77-79]
     #   int ginQueueDepth;                            // int32: offset 80, size 4
-    #   int worldGinBarrierCount;                     // int32: offset 84, size 4
+    #   int ginTrafficClass;                          // int32: offset 84, size 4
+    #   int worldGinBarrierCount;                     // int32: offset 88, size 4
+    #   // [trailing padding 4 bytes for size_t (8-byte) alignment]
     # }
     expected_layout = [
         # field_name                     type        offset    size
@@ -771,9 +773,11 @@ def test_nccl_dev_comm_requirements_struct_layout():
         ('gin_exclusive_contexts',       np.uint8,   76,       1),
         # 3 bytes padding
         ('gin_queue_depth',              np.int32,   80,       4),
-        ('world_gin_barrier_count',      np.int32,   84,       4),
+        ('gin_traffic_class',            np.int32,   84,       4),
+        ('world_gin_barrier_count',      np.int32,   88,       4),
+        # 4 bytes trailing padding to round up to 8-byte alignment of size_t
     ]
-    expected_total_size = 88
+    expected_total_size = 96
 
     # Verify struct size
     assert dtype.itemsize == expected_total_size, \
@@ -865,37 +869,36 @@ def test_nccl_dev_comm_struct_layout():
     # Note: Some fields are nested structs, we validate the scalar fields and their offsets
     expected_layout = [
         # field_name                   type                                              offset    size
-        ('rank',                       np.int32,                                         0,        4),
-        ('n_ranks',                    np.int32,                                         4,        4),
-        ('n_ranks_rcp32',              np.uint32,                                        8,        4),
-        ('lsa_rank',                   np.int32,                                         12,       4),
-        ('lsa_size',                   np.int32,                                         16,       4),
-        ('lsa_size_rcp32',             np.uint32,                                        20,       4),
-        ('window_table',               np.intp,                                          24,       8),
-        ('resource_window',            np.intp,                                          32,       8),
-        ('resource_window_inlined',    _nccl_bindings.window_vidmem_dtype,               40,       72),
-        ('lsa_multimem',               _nccl_bindings.multimem_handle_dtype,             112,      8),
-        ('lsa_barrier',                _nccl_bindings.lsa_barrier_handle_dtype,          120,      8),
-        ('rail_gin_barrier',           _nccl_bindings.gin_barrier_handle_dtype,          128,      8),
-        ('gin_connection_count',       np.uint8,                                         136,      1),
-        ('gin_net_device_types',       np.dtype((np.uint8, 4)),                          137,      4),
-        # 3 bytes padding (offset 141-143)
-        ('gin_handles',                np.dtype((np.int64, 4)),                          144,      32),
-        ('gin_signal_base',            np.uint32,                                        176,      4),
-        ('gin_signal_count',           np.int32,                                         180,      4),
-        ('gin_counter_base',           np.uint32,                                        184,      4),
+        ('magic',                      np.uint32,                                        0,        4),
+        ('version',                    np.uint32,                                        4,        4),
+        ('rank',                       np.int32,                                         8,        4),
+        ('n_ranks',                    np.int32,                                         12,       4),
+        ('n_ranks_rcp32',              np.uint32,                                        16,       4),
+        ('lsa_rank',                   np.int32,                                         20,       4),
+        ('lsa_size',                   np.int32,                                         24,       4),
+        ('lsa_size_rcp32',             np.uint32,                                        28,       4),
+        ('window_table',               np.intp,                                          32,       8),
+        ('resource_window',            np.intp,                                          40,       8),
+        ('resource_window_inlined',    _nccl_bindings.resource_window_vidmem_dtype,      48,       72),
+        ('lsa_multimem',               _nccl_bindings.multimem_handle_dtype,             120,      8),
+        ('lsa_barrier',                _nccl_bindings.lsa_barrier_handle_dtype,          128,      8),
+        ('rail_gin_barrier',           _nccl_bindings.gin_barrier_handle_dtype,          136,      8),
+        ('gin_connection_count',       np.uint8,                                         144,      1),
+        ('gin_net_device_types',       np.dtype((np.uint8, 4)),                          145,      4),
+        # 3 bytes padding (offset 149-151)
+        ('gin_handles',                np.dtype((np.int64, 4)),                          152,      32),
+        ('gin_signal_count',           np.int32,                                         184,      4),
         ('gin_counter_count',          np.int32,                                         188,      4),
         ('gin_signal_shadows',         np.intp,                                          192,      8),
         ('gin_context_count',          np.uint32,                                        200,      4),
-        ('gin_context_base',           np.uint32,                                        204,      4),
-        ('gin_is_railed',              np.uint8,                                         208,      1),
-        # 7 bytes padding (offset 209-215)
-        ('abort_flag',                 np.intp,                                          216,      8),
-        ('hybrid_lsa_barrier',         _nccl_bindings.lsa_barrier_handle_dtype,          224,      8),
-        ('hybrid_rail_gin_barrier',    _nccl_bindings.gin_barrier_handle_dtype,          232,      8),
-        ('world_gin_barrier',          _nccl_bindings.gin_barrier_handle_dtype,          240,      8),
+        ('gin_is_railed',              np.uint8,                                         204,      1),
+        # 3 bytes padding (offset 205-207)
+        ('abort_flag',                 np.intp,                                          208,      8),
+        ('hybrid_lsa_barrier',         _nccl_bindings.lsa_barrier_handle_dtype,          216,      8),
+        ('hybrid_rail_gin_barrier',    _nccl_bindings.gin_barrier_handle_dtype,          224,      8),
+        ('world_gin_barrier',          _nccl_bindings.gin_barrier_handle_dtype,          232,      8),
     ]
-    expected_total_size = 248
+    expected_total_size = 240
 
     # Verify struct size
     assert dtype.itemsize == expected_total_size, \

@@ -248,6 +248,19 @@
             "ncclGinBarrierHandle_t": "AUTO_LOWPP_CLASS",
             "ncclLsaBarrierHandle_t": "AUTO_LOWPP_CLASS",
             "ncclWindow_vidmem_t": "AUTO_LOWPP_CLASS",
+            "ncclResourceWindow_vidmem_t": {
+                "AUTO_LOWPP_CLASS": {
+                    "reserved1": {
+                        "getter": "SKIP_LOWPP"
+                    },
+                    "reserved2": {
+                        "getter": "SKIP_LOWPP"
+                    },
+                    "reserved3": {
+                        "getter": "SKIP_LOWPP"
+                    },
+                }
+            },
             "ncclDevComm_t": "AUTO_LOWPP_CLASS",
         },
         # map the enum values to their expected dtypes
