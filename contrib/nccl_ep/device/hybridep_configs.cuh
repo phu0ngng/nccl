@@ -58,4 +58,4 @@
 // ============================================================================
 // Max local experts per rank supported by the remap kernel register arrays.
 // Increase if experts_per_rank ever exceeds this (triggers runtime assert).
-#define HYBRIDEP_LCP_MAX_LOCAL_EXPERTS 64
+#define HYBRIDEP_REMAP_MAX_LOCAL_EXPERTS 64

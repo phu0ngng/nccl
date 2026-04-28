@@ -4508,7 +4508,7 @@ __global__ static void expert_major_remap_kernel(
         // IMPORTANT: counts ALL matching experts (no break-on-first-match) so that zone
         // offsets and within-zone em_slot positions are consistent across ALL ranks.
         // Remote S2G uses these same em_slots when writing to the dest rank's buffer.
-        int lc[HYBRIDEP_LCP_MAX_LOCAL_EXPERTS] = {};
+        int lc[HYBRIDEP_REMAP_MAX_LOCAL_EXPERTS] = {};
         int lg = 0;
         for (int tok = static_cast<int>(threadIdx.x); tok < total_global; tok += static_cast<int>(blockDim.x)) {
             const uint8_t* row = grm + static_cast<size_t>(tok) * experts_packed;
@@ -4585,7 +4585,7 @@ __global__ static void expert_major_remap_kernel(
         const int l_end   = min(l_start + L, w_end);
 
         // B1: count this lane's sub-chunk per expert and for gpu_slot.
-        int mc[HYBRIDEP_LCP_MAX_LOCAL_EXPERTS] = {};
+        int mc[HYBRIDEP_REMAP_MAX_LOCAL_EXPERTS] = {};
         int mg = 0;
         for (int tok = l_start; tok < l_end; tok++) {
             const uint8_t* row = grm + static_cast<size_t>(tok) * experts_packed;
@@ -4631,7 +4631,7 @@ __global__ static void expert_major_remap_kernel(
         // Thread 0: inter-warp exclusive prefix scan; overwrite warp_ws with each warp's
         // starting slot (= sum of totals from all prior warps).
         if (threadIdx.x == 0) {
-            int running[HYBRIDEP_LCP_MAX_LOCAL_EXPERTS + 1] = {};
+            int running[HYBRIDEP_REMAP_MAX_LOCAL_EXPERTS + 1] = {};
             for (int w = 0; w < nwarps; w++) {
                 for (int k = 0; k <= epr; k++) {
                     const int cnt = warp_ws[w * (epr + 1) + k];
@@ -4643,7 +4643,7 @@ __global__ static void expert_major_remap_kernel(
         __syncthreads();
 
         // Each lane: absolute starting slot = zone_offset + warp_start + lane_exclusive_prefix.
-        int cur_expert_slot[HYBRIDEP_LCP_MAX_LOCAL_EXPERTS];
+        int cur_expert_slot[HYBRIDEP_REMAP_MAX_LOCAL_EXPERTS];
         for (int k = 0; k < epr; k++)
             cur_expert_slot[k] = static_cast<int>(s_offsets[k])
                                 + warp_ws[warp_id * (epr + 1) + k] + mc[k];
