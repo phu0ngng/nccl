@@ -37,6 +37,7 @@ enum class TestResult_t {
 #define TESTCHECK(status) do { \
   TestResult_t _status = (status); \
   if (_status == TestResult_t::testSkipped) { \
+    printf("WARNING: TEST SKIPPED (likely because GIN or the device API is not supported)\n"); \
     return; \
   } else if (_status == TestResult_t::testError) { \
     FAIL(); \
@@ -115,6 +116,12 @@ protected:
   // Returns TestResult_t: testSuccess, testSkipped (if not supported), or testError
   // Tests should use TESTCHECK(createDevComms(reqs)) to handle the result
   TestResult_t createDevCommsShared(const ncclDevCommRequirements& reqs, ncclComm_t* comms) {
+    TestResult_t resultIfNotSupported = TestResult_t::testSkipped;
+    char* devApiNoSkip = getenv("DEV_API_NO_SKIP");
+    if (devApiNoSkip && strcmp(devApiNoSkip, "1") == 0) {
+      resultIfNotSupported = TestResult_t::testError;
+    }
+
     if (devComms.size() != 0) { // Something has gone wrong if we already have devComms
       return TestResult_t::testError;
     }
@@ -129,7 +136,7 @@ protected:
       }
 
       if (!props.deviceApiSupport) {
-        return TestResult_t::testSkipped;
+        return resultIfNotSupported;
       }
       bool ginRequested = reqs.ginForceEnable || reqs.ginConnectionType != NCCL_GIN_CONNECTION_NONE;
       if (ginRequested) {
@@ -138,7 +145,7 @@ protected:
           return TestResult_t::testError;
         }
         if (props.ginType == NCCL_GIN_TYPE_NONE) {
-          return TestResult_t::testSkipped;
+          return resultIfNotSupported;
         }
       }
     }

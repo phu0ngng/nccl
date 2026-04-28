@@ -1969,6 +1969,7 @@ apitest-eos:
     API_TESTS_NETWORK: 1
     API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
+    DEV_API_NO_SKIP: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -2004,6 +2005,7 @@ apitest-cw-dfw:
     API_TESTS_NETWORK: 1
     API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
+    DEV_API_NO_SKIP: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -2154,6 +2156,7 @@ apitest-pre-nyx:
     API_TESTS_NETWORK: 1
     API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
+    DEV_API_NO_SKIP: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -2188,6 +2191,7 @@ apitest-pre-tyche:
     API_TESTS_NETWORK: 1
     API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
+    DEV_API_NO_SKIP: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -2223,6 +2227,7 @@ apitest-ipp6-a40:
     API_TESTS_NETWORK: 1
     API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
+    DEV_API_NO_SKIP: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::apitest-a40::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -2265,6 +2270,7 @@ apitest-ipp6-a100:
     API_TESTS_NETWORK: 1
     API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
+    DEV_API_NO_SKIP: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::apitest-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -2333,6 +2339,7 @@ apitest-theia:
     API_TESTS_NETWORK: 1
     API_TESTS_RMA: 1
     API_TESTS_DEVICE_API: 1
+    DEV_API_NO_SKIP: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
