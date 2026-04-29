@@ -24,6 +24,7 @@ plugins/net/google-fastsocket
 plugins/net/README.md
 plugins/profiler
 plugins/tuner
+plugins/gin
 src
 .gitignore
 CMakeLists.txt
