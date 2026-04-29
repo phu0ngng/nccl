@@ -79,6 +79,20 @@ __global__ void flushWithSmemKernel(ncclDevComm comm, ncclWindow_t window, size_
 #endif
 }
 
+__global__ void flushNoPrevOpsKernel(ncclDevComm comm) {
+  ncclTeam world = ncclTeamWorld(comm);
+  ncclGin gin(comm, 0);
+  gin.flush(ncclCoopCta());
+}
+
+__global__ void flushAsyncNoPrevOpsKernel(ncclDevComm comm) {
+  ncclTeam world = ncclTeamWorld(comm);
+  ncclGin gin(comm, 0);
+  ncclGinRequest_t ticket;
+  gin.flushAsync(world, REMOTE_RANK, &ticket);
+  gin.wait(ticket, ncclCoopCta());
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Test class
 ////////////////////////////////////////////////////////////////////////////////
@@ -132,6 +146,34 @@ TEST_F(GinFlush_test, flush_with_smem) {
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     flushWithSmemKernel<<<1, 512, 0, streams[i]>>>(devComms[i], windows[i], 0, getSize, /*signalIdx*/ 0);
+  }
+  syncAllDevices();
+  cudaError_t err = cudaGetLastError();
+  ASSERT_EQ(err, cudaSuccess) << "Kernel failed: " << cudaGetErrorString(err);
+}
+
+TEST_F(GinFlush_test, flush_no_prev_ops) {
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+  TESTCHECK(createDevComms(reqs));
+
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    flushNoPrevOpsKernel<<<1, 1, 0, streams[i]>>>(devComms[i]);
+  }
+  syncAllDevices();
+  cudaError_t err = cudaGetLastError();
+  ASSERT_EQ(err, cudaSuccess) << "Kernel failed: " << cudaGetErrorString(err);
+}
+
+TEST_F(GinFlush_test, flushAsync_no_prev_ops) {
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+  TESTCHECK(createDevComms(reqs));
+
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    flushAsyncNoPrevOpsKernel<<<1, 1, 0, streams[i]>>>(devComms[i]);
   }
   syncAllDevices();
   cudaError_t err = cudaGetLastError();
