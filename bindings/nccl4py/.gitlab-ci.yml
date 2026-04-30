@@ -68,14 +68,7 @@ nccl4py-api-check:
   stage: public-api-update-check
   needs: []
   rules:
-    - if: $CI_MERGE_REQUEST_IID
-      changes:
-        paths:
-          - src/nccl.h.in
-          - src/include/nccl_common.h
-          - src/include/nccl_device.h
-          - "src/include/nccl_device/*.h"
-          - "src/include/nccl_device/impl/*.h"
+    - if: $PARENT_CI_MERGE_REQUEST_IID
       when: always
     - when: never
   tags:

@@ -123,6 +123,13 @@ HEADER
 # Sets OUTPUT and EXIT_CODE.
 # Callers may override env vars before calling; this sets defaults only.
 run_check() {
+  # Isolate from CI: the parent pipeline forwards PARENT_CI_MERGE_REQUEST_*
+  # to the child, but each test uses its own throwaway repo with a different
+  # MERGE_BASE_SHA, so the forwarded values would point at SHAs that don't
+  # exist locally. Unset them and let the test's own CI_MERGE_REQUEST_*
+  # values drive the script.
+  unset PARENT_CI_MERGE_REQUEST_IID PARENT_CI_MERGE_REQUEST_DIFF_BASE_SHA
+
   export CI_MERGE_REQUEST_IID="${CI_MERGE_REQUEST_IID-999}"
   export CI_MERGE_REQUEST_DIFF_BASE_SHA="$MERGE_BASE_SHA"
   export CI_API_V4_URL="https://gitlab.example.com/api/v4"

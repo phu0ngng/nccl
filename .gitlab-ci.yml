@@ -725,6 +725,8 @@ nccl4py_ci:
     strategy: depend
   variables:
     PARENT_PIPELINE_ID: $CI_PIPELINE_ID
+    PARENT_CI_MERGE_REQUEST_IID: $CI_MERGE_REQUEST_IID
+    PARENT_CI_MERGE_REQUEST_DIFF_BASE_SHA: $CI_MERGE_REQUEST_DIFF_BASE_SHA
 
 nccl_ep_ci:
   stage: downstream

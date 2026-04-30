@@ -5,12 +5,18 @@
 # Detects changes to NCCL public API headers in an MR and posts a comment
 # on the merge request notifying nccl4py engineers.
 #
-# Required CI variables:
-#   CI_MERGE_REQUEST_IID           - MR internal ID (set by GitLab for MR pipelines)
-#   CI_MERGE_REQUEST_DIFF_BASE_SHA - Merge base commit SHA
-#   CI_API_V4_URL                  - GitLab API base URL
-#   CI_PROJECT_ID                  - Project ID
-#   CI_JOB_TOKEN                   - Ephemeral job token for API auth
+# Required CI variables (PARENT_* are forwarded from the parent pipeline trigger
+# because this job runs in a child pipeline and predefined CI_MERGE_REQUEST_*
+# variables are not auto-populated when CI_PIPELINE_SOURCE is "parent_pipeline"):
+#   PARENT_CI_MERGE_REQUEST_IID            - MR internal ID
+#   PARENT_CI_MERGE_REQUEST_DIFF_BASE_SHA  - Merge base commit SHA
+#   CI_API_V4_URL                          - GitLab API base URL
+#   CI_PROJECT_ID                          - Project ID
+#   CI_JOB_TOKEN                           - Ephemeral job token for API auth
+#
+# When the script is run outside a child pipeline (e.g. from the test suite),
+# CI_MERGE_REQUEST_IID and CI_MERGE_REQUEST_DIFF_BASE_SHA are accepted as
+# fallbacks.
 #
 # Optional CI variables:
 #   NCCL4PY_REVIEWERS - Space-separated GitLab @mentions (e.g. "@leofang @user2")
@@ -29,19 +35,19 @@ MONITORED_PATHS=(
 )
 
 GITLAB_API="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}"
-MR_IID="${CI_MERGE_REQUEST_IID:-}"
-MERGE_BASE="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}"
+MR_IID="${PARENT_CI_MERGE_REQUEST_IID:-${CI_MERGE_REQUEST_IID:-}}"
+MERGE_BASE="${PARENT_CI_MERGE_REQUEST_DIFF_BASE_SHA:-${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}}"
 
 # ---------------------------------------------------------------------------
 # Guard: ensure we're in an MR pipeline
 # ---------------------------------------------------------------------------
 if [[ -z "$MR_IID" ]]; then
-  echo "Not an MR pipeline (CI_MERGE_REQUEST_IID is unset), skipping."
+  echo "Not an MR pipeline (PARENT_CI_MERGE_REQUEST_IID/CI_MERGE_REQUEST_IID is unset), skipping."
   exit 0
 fi
 
 if [[ -z "$MERGE_BASE" ]]; then
-  echo "CI_MERGE_REQUEST_DIFF_BASE_SHA is unset, skipping."
+  echo "PARENT_CI_MERGE_REQUEST_DIFF_BASE_SHA/CI_MERGE_REQUEST_DIFF_BASE_SHA is unset, skipping."
   exit 0
 fi
 
