@@ -56,7 +56,9 @@ clean:
 	@rm -rf $(DIST_DIR) \
 			$(NCCL4PY_DIR)/*.egg-info \
 			$(NCCL4PY_DIR)/build \
-			$(NCCL4PY_DIR)/dist
+			$(NCCL4PY_DIR)/dist \
+			$(NCCL4PY_DIR)/native/nccl_ep \
+			$(NCCL4PY_DIR)/nccl/ep
 	@find $(NCCL4PY_DIR) -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	@find $(NCCL4PY_DIR) -type f -name "*.pyc" -delete 2>/dev/null || true
 	@find $(NCCL4PY_BINDINGS_DIR) -type f \( -name "*.so" -o -name "*.cpp" -o -name "*.c" \) -delete 2>/dev/null || true

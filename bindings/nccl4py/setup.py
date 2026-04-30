@@ -19,10 +19,68 @@ if not cuda_path.exists() or not cuda_path.is_dir():
     raise SystemExit(f"Error: CUDA_HOME does not exist or is not a directory: {CUDA_HOME}")
 CUDA_INC = str(cuda_path / "include")
 SETUP_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SETUP_DIR.parents[1]
+CONTRIB_NCCL_EP_DIR = REPO_ROOT / "contrib" / "nccl_ep"
+CONTRIB_NCCL_EP_PACKAGE_DIR = CONTRIB_NCCL_EP_DIR / "python" / "nccl_ep"
 NCCL_EP_NATIVE_DIR = SETUP_DIR / "native" / "nccl_ep"
+NCCL_EP_PACKAGE_DIR = SETUP_DIR / "nccl" / "ep"
 NCCL_EP_LIB_NAME = "libnccl_ep.so"
-NCCL_EP_PACKAGE_LIB = SETUP_DIR / "nccl" / "ep" / "lib" / NCCL_EP_LIB_NAME
+NCCL_EP_PACKAGE_LIB = NCCL_EP_PACKAGE_DIR / "lib" / NCCL_EP_LIB_NAME
 _NCCL_EP_BUILT_LIB = None
+
+
+def _ignore_nccl_ep_native(_directory, names):
+    ignored = {
+        "__pycache__",
+        ".pytest_cache",
+        "build",
+        "dist",
+        "nccl_ep.egg-info",
+    }
+    if "nccl_ep" in names and Path(_directory).name == "python":
+        ignored.add("nccl_ep")
+    ignored.update(name for name in names if name.endswith((".pyc", ".pyo", ".so")))
+    return ignored
+
+
+def _ignore_nccl_ep_python(_directory, names):
+    ignored = {"__pycache__", ".pytest_cache", "lib"}
+    ignored.update(name for name in names if name.endswith((".pyc", ".pyo", ".so")))
+    return ignored
+
+
+def _refresh_tree(source: Path, destination: Path, ignore) -> None:
+    if destination.exists():
+        shutil.rmtree(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, destination, ignore=ignore)
+
+
+def prepare_nccl_ep_sources() -> None:
+    """Mirror contrib/nccl_ep into the nccl4py packaging layout.
+
+    contrib/nccl_ep remains the development source path. The generated mirrors
+    under bindings/nccl4py preserve the sdist and wheel file structure.
+    """
+    if CONTRIB_NCCL_EP_DIR.exists():
+        if not CONTRIB_NCCL_EP_PACKAGE_DIR.exists():
+            raise RuntimeError(
+                f"NCCL EP Python package not found: {CONTRIB_NCCL_EP_PACKAGE_DIR}"
+            )
+        _refresh_tree(CONTRIB_NCCL_EP_DIR, NCCL_EP_NATIVE_DIR, _ignore_nccl_ep_native)
+        _refresh_tree(CONTRIB_NCCL_EP_PACKAGE_DIR, NCCL_EP_PACKAGE_DIR, _ignore_nccl_ep_python)
+        return
+
+    if not NCCL_EP_NATIVE_DIR.exists():
+        raise RuntimeError(f"NCCL EP native source tree not found: {NCCL_EP_NATIVE_DIR}")
+    if not NCCL_EP_PACKAGE_DIR.exists():
+        raise RuntimeError(f"NCCL EP Python package not found: {NCCL_EP_PACKAGE_DIR}")
+
+
+def get_nccl_ep_native_dir() -> Path:
+    if CONTRIB_NCCL_EP_DIR.exists():
+        return CONTRIB_NCCL_EP_DIR
+    return NCCL_EP_NATIVE_DIR
 
 
 def build_nccl_ep(build_temp) -> Path:
@@ -31,8 +89,9 @@ def build_nccl_ep(build_temp) -> Path:
     if _NCCL_EP_BUILT_LIB is not None and _NCCL_EP_BUILT_LIB.exists():
         return _NCCL_EP_BUILT_LIB
 
-    if not NCCL_EP_NATIVE_DIR.exists():
-        raise RuntimeError(f"NCCL EP native source tree not found: {NCCL_EP_NATIVE_DIR}")
+    native_dir = get_nccl_ep_native_dir()
+    if not native_dir.exists():
+        raise RuntimeError(f"NCCL EP native source tree not found: {native_dir}")
 
     cmake_build_dir = Path(build_temp).resolve() / "nccl_ep"
     cmake_build_dir.mkdir(parents=True, exist_ok=True)
@@ -47,7 +106,7 @@ def build_nccl_ep(build_temp) -> Path:
     configure_cmd = [
         "cmake",
         "-S",
-        str(NCCL_EP_NATIVE_DIR),
+        str(native_dir),
         "-B",
         str(cmake_build_dir),
         f"-DCMAKE_BUILD_TYPE={build_type}",
@@ -179,6 +238,8 @@ ext_modules = [e for ext in ext_modules for e in calculate_modules(ext)]
 
 
 compiler_directives = {"embedsignature": True, "show_performance_hints": True, "freethreading_compatible": True}
+
+prepare_nccl_ep_sources()
 
 
 setup(

@@ -43,8 +43,8 @@ ThirdPartyNotices.txt
 **/.gitlab-ci.yml
 bindings/nccl4py/build_assets
 bindings/nccl4py/ci
-bindings/nccl4py/native/nccl_ep/ci
-bindings/nccl4py/native/nccl_ep/scripts
+contrib/nccl_ep/ci
+contrib/nccl_ep/scripts
 bindings/nccl4py/tests
 pkg/conda
 pkg/doc
