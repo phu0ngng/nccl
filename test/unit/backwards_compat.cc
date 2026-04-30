@@ -36,12 +36,14 @@ void ncclDevComm_backwards_compat_test() {
   static_assert(offsetof(ncclDevComm_t, ginSignalShadows) == 192);
   static_assert(offsetof(ncclDevComm_t, ginContextCount) == 200);
   static_assert(offsetof(ncclDevComm_t, ginIsRailed) == 204);
+  static_assert(offsetof(ncclDevComm_t, ginStrongLegacySignals) == 205);
   static_assert(offsetof(ncclDevComm_t, abortFlag) == 208);
   static_assert(offsetof(ncclDevComm_t, hybridLsaBarrier) == 216);
   static_assert(offsetof(ncclDevComm_t, hybridRailGinBarrier) == 224);
   static_assert(offsetof(ncclDevComm_t, worldGinBarrier) == 232);
 
   // This check prompts users to update the test. Edit according to the instructions above.
+  // NOTE: If the size of the devComm changes, we MUST create a new compat layer.
   static_assert(sizeof(ncclDevComm_t) == 240);
 
   static_assert(offsetof(struct ncclDevCommWindowTable, entries) == 0);
@@ -116,6 +118,7 @@ void ncclDevCommRequirements_backwards_compat_test() {
   static_assert(offsetof(ncclDevCommRequirements_t, ginQueueDepth) == 80);
   static_assert(offsetof(ncclDevCommRequirements_t, ginTrafficClass) == 84);
   static_assert(offsetof(ncclDevCommRequirements_t, worldGinBarrierCount) == 88);
+  static_assert(offsetof(ncclDevCommRequirements_t, ginStrongSignalsRequired) == 92);
 
   // This check prompts users to update the test. Edit according to the instructions above.
   static_assert(sizeof(ncclDevCommRequirements_t) == 96);

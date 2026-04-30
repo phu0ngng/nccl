@@ -27,6 +27,51 @@ static const char* const kMultiTeamTestNameSubstring = "multi";
   } \
 } while(0)
 
+enum class GinSignalType { Strong, Weak, Legacy };
+
+enum class CoopLevel {
+  Thread = 0,
+  Cta = 2,
+  Warp = 1
+};
+
+inline int getNumThreadsForOneCoop(CoopLevel level) {
+  switch (level) {
+    case CoopLevel::Thread: return 1;
+    case CoopLevel::Warp:   return 32;
+    case CoopLevel::Cta:    return 64;
+  }
+  return 1;
+}
+
+__device__ inline ncclCoopAny getCoopFromLevel(CoopLevel level) {
+  if (level == CoopLevel::Thread) {
+    return ncclCoopThread();
+  } else if (level == CoopLevel::Warp) {
+    return ncclCoopWarp();
+  } else {
+    return ncclCoopCta();
+  }
+}
+
+// Workaround for https://nvbugspro.nvidia.com/bug/5870672: compiler bug when calling
+// waitSignal with a coop variable of type ncclCoopAny.
+__device__ inline void waitSignal(ncclGin& gin, CoopLevel level, ncclWindow_t window, size_t offset) {
+  switch (level) {
+    case CoopLevel::Thread:
+      gin.waitSignal(ncclCoopThread(), window, offset, 1);
+      break;
+    case CoopLevel::Warp:
+      gin.waitSignal(ncclCoopWarp(), window, offset, ncclCoopWarp().size());
+      break;
+    case CoopLevel::Cta:
+      gin.waitSignal(ncclCoopCta(), window, offset, ncclCoopCta().size());
+      break;
+    default:
+      break;
+  }
+}
+
 enum class TestResult_t {
   testSuccess = 0,
   testSkipped = 1,

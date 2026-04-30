@@ -2,31 +2,44 @@
 #include "ncclDevApiCommon_test.cuh"
 #include <cassert>
 
-////////////////////////////////////////////////////////////////////////////////
-// Test kernels for indexed signals
-////////////////////////////////////////////////////////////////////////////////
+template <typename Coop>
+__device__ void ginSignalInc(ncclGin& gin, Coop coop, int destRank, ncclGinSignal_t signalIdx, GinSignalType signalType) {
+  switch (signalType) {
+    case GinSignalType::Strong: gin.signal(coop, destRank, ncclGin_StrongSignalInc{signalIdx}); break;
+    case GinSignalType::Weak:   gin.signal(coop, destRank, ncclGin_WeakSignalInc{signalIdx});   break;
+    case GinSignalType::Legacy: gin.signal(coop, destRank, ncclGin_SignalInc{signalIdx});       break;
+  }
+}
 
-__global__ void signalRingKernel(ncclDevComm comm, int contextIdx, int signalIdx) {
+template <typename Coop>
+__device__ void ginSignalAdd(ncclGin& gin, Coop coop, int destRank, ncclGinSignal_t signalIdx, uint64_t value, GinSignalType signalType) {
+  switch (signalType) {
+    case GinSignalType::Strong: gin.signal(coop, destRank, ncclGin_StrongSignalAdd{signalIdx, value}); break;
+    case GinSignalType::Weak:   gin.signal(coop, destRank, ncclGin_WeakSignalAdd{signalIdx, value});   break;
+    case GinSignalType::Legacy: gin.signal(coop, destRank, ncclGin_SignalAdd{signalIdx, value});       break;
+  }
+}
+
+__global__ void signalRingKernel(ncclDevComm comm, int contextIdx, int signalIdx, GinSignalType signalType) {
 #if __CUDA_ARCH__ >= 700
   ncclTeam world = ncclTeamWorld(comm);
   ncclGin gin(comm, contextIdx);
 
   int nextRank = (world.rank + 1) % world.nRanks;
 
-  // Signal the next rank
-  gin.signal(world, nextRank, ncclGin_SignalInc{(ncclGinSignal_t)signalIdx});
+  ginSignalInc(gin, world, nextRank, (ncclGinSignal_t)signalIdx, signalType);
 
   // Wait for signal from previous rank
   gin.waitSignal(ncclCoopCta(), signalIdx, 1);
 #endif
 }
 
-__global__ void signalResetKernel(ncclDevComm comm, int contextIdx, int signalIdx) {
+__global__ void signalResetKernel(ncclDevComm comm, int contextIdx, int signalIdx, GinSignalType signalType) {
 #if __CUDA_ARCH__ >= 700
   ncclTeam world = ncclTeamWorld(comm);
   ncclGin gin(comm, contextIdx);
 
-  gin.signal(world, (world.rank + 1) % world.nRanks, ncclGin_SignalInc{(ncclGinSignal_t)signalIdx});
+  ginSignalInc(gin, world, (world.rank + 1) % world.nRanks, (ncclGinSignal_t)signalIdx, signalType);
   gin.waitSignal(ncclCoopCta(), signalIdx, 1);
   gin.resetSignal(signalIdx);
   uint64_t value = gin.readSignal(signalIdx);
@@ -34,7 +47,7 @@ __global__ void signalResetKernel(ncclDevComm comm, int contextIdx, int signalId
 #endif
 }
 
-__global__ void signalBasicKernel(ncclDevComm comm, int contextIdx, ncclGinSignal_t signalIdx, bool isAdd) {
+__global__ void signalBasicKernel(ncclDevComm comm, int contextIdx, ncclGinSignal_t signalIdx, bool isAdd, GinSignalType signalType) {
 #if __CUDA_ARCH__ >= 700
   ncclTeam world = ncclTeamWorld(comm);
   ncclGin gin(comm, contextIdx);
@@ -45,9 +58,9 @@ __global__ void signalBasicKernel(ncclDevComm comm, int contextIdx, ncclGinSigna
 
   if (world.rank == 0) {
     if (isAdd) {
-      gin.signal(world, 1, ncclGin_SignalAdd{signalIdx, 1});
+      ginSignalAdd(gin, world, 1, signalIdx, 1, signalType);
     } else {
-      gin.signal(world, 1, ncclGin_SignalInc{signalIdx});
+      ginSignalInc(gin, world, 1, signalIdx, signalType);
     }
   }
 
@@ -60,11 +73,11 @@ __global__ void signalBasicKernel(ncclDevComm comm, int contextIdx, ncclGinSigna
 }
 
 // Tests that signals for different contexts are independent.
-__global__ void signalMultipleContextsKernel(ncclDevComm comm, int maxContexts, int signalIdx) {
+__global__ void signalMultipleContextsKernel(ncclDevComm comm, int maxContexts, int signalIdx, GinSignalType signalType) {
   ncclTeam world = ncclTeamWorld(comm);
   for (int contextIdx = 0; contextIdx < maxContexts; contextIdx++) {
     ncclGin gin(comm, contextIdx);
-    gin.signal(world, (world.rank + 1) % world.nRanks, ncclGin_SignalInc{(ncclGinSignal_t)signalIdx});
+    ginSignalInc(gin, world, (world.rank + 1) % world.nRanks, (ncclGinSignal_t)signalIdx, signalType);
   }
 
   for (int contextIdx = 0; contextIdx < maxContexts; contextIdx++) {
@@ -104,10 +117,15 @@ __global__ void verifyAllZeroKernel(ncclDevComm comm, int contextIdx,
 struct GinSignalParams {
   int signalIdx;
   int contextIdx;
+  GinSignalType signalType;
 
   std::string toString() const {
+    const char* typeName = (signalType == GinSignalType::Strong) ? "strong"
+                         : (signalType == GinSignalType::Weak)   ? "weak"
+                                                                  : "legacy";
     return std::string("signal_") + std::to_string(signalIdx) +
-           "_context_" + std::to_string(contextIdx);
+           "_context_" + std::to_string(contextIdx) +
+           "_" + typeName;
   }
 };
 
@@ -117,6 +135,9 @@ struct GinSignalParams {
 
 class GinSignal_test : public ncclDevApiCommon_test,
                       public ::testing::WithParamInterface<GinSignalParams> {};
+
+// Non-parameterized test class for misc signal tests (weak signals and init-to-zero).
+class GinSignalMisc_test : public ncclDevApiCommon_test {};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
@@ -133,7 +154,7 @@ TEST_P(GinSignal_test, ring) {
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     signalRingKernel<<<1, 1, 0, streams[i]>>>(
-      devComms[i], params.contextIdx, params.signalIdx);
+      devComms[i], params.contextIdx, params.signalIdx, params.signalType);
   }
   syncAllDevices();
   cudaError_t err = cudaGetLastError();
@@ -151,7 +172,7 @@ TEST_P(GinSignal_test, reset) {
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     signalResetKernel<<<1, 1, 0, streams[i]>>>(
-      devComms[i], params.contextIdx, params.signalIdx);
+      devComms[i], params.contextIdx, params.signalIdx, params.signalType);
   }
   syncAllDevices();
   cudaError_t err = cudaGetLastError();
@@ -169,7 +190,7 @@ TEST_P(GinSignal_test, basic_add) {
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     signalBasicKernel<<<1, 1, 0, streams[i]>>>(
-      devComms[i], params.contextIdx, (ncclGinSignal_t)params.signalIdx, true);
+      devComms[i], params.contextIdx, (ncclGinSignal_t)params.signalIdx, true, params.signalType);
   }
   syncAllDevices();
   cudaError_t err = cudaGetLastError();
@@ -187,7 +208,7 @@ TEST_P(GinSignal_test, basic_inc) {
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     signalBasicKernel<<<1, 1, 0, streams[i]>>>(
-      devComms[i], params.contextIdx, (ncclGinSignal_t)params.signalIdx, false);
+      devComms[i], params.contextIdx, (ncclGinSignal_t)params.signalIdx, false, params.signalType);
   }
   syncAllDevices();
   cudaError_t err = cudaGetLastError();
@@ -205,16 +226,20 @@ TEST_P(GinSignal_test, independent_contexts) {
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     signalMultipleContextsKernel<<<1, 1, 0, streams[i]>>>(
-      devComms[i], params.contextIdx + 1, params.signalIdx);
+      devComms[i], params.contextIdx + 1, params.signalIdx, params.signalType);
   }
   syncAllDevices();
   cudaError_t err = cudaGetLastError();
   ASSERT_EQ(err, cudaSuccess) << "Kernel failed: " << cudaGetErrorString(err);
 }
 
-TEST_P(GinSignal_test, signal_counter_init_zero) {
-  const GinSignalParams& params = GetParam();
+////////////////////////////////////////////////////////////////////////////////
+// Non-parameterized tests: weak signals and signal/counter init-to-zero
+////////////////////////////////////////////////////////////////////////////////
 
+TEST_F(GinSignalMisc_test, signal_counter_init_zero) {
+  const int signalIdx = 0;
+  const int contextIdx = 0;
   const int signalCount = 5;
   const int counterCount = 5;
 
@@ -226,27 +251,17 @@ TEST_P(GinSignal_test, signal_counter_init_zero) {
 
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
-
-    signalRingKernel<<<1, 1, 0, streams[i]>>>(devComms[i], params.contextIdx, params.signalIdx);
+    signalRingKernel<<<1, 1, 0, streams[i]>>>(devComms[i], contextIdx, signalIdx, GinSignalType::Strong);
   }
   syncAllDevices();
 
-  // Step 2: Destroy devComms (this should trigger the reset kernel)
   destroyDevComms();
-
-  // Step 3: Recreate devComms to access the same memory
   TESTCHECK(createDevComms(reqs));
 
-  // Step 4: Verify all signals and counters are zero
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
-
-    // Launch verification kernel
-    verifyAllZeroKernel<<<1, 1, 0, streams[i]>>>(
-      devComms[i], params.contextIdx, signalCount, counterCount);
+    verifyAllZeroKernel<<<1, 1, 0, streams[i]>>>(devComms[i], contextIdx, signalCount, counterCount);
     ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(streams[i]));
-
-    // Check for kernel assertion failures
     cudaError_t err = cudaGetLastError();
     ASSERT_EQ(cudaSuccess, err) << "Device " << i << ": " << cudaGetErrorString(err);
   }
@@ -255,8 +270,40 @@ TEST_P(GinSignal_test, signal_counter_init_zero) {
   ASSERT_EQ(err, cudaSuccess) << "Test failed: " << cudaGetErrorString(err);
 }
 
+TEST_F(GinSignalMisc_test, weak_basic_add) {
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.ginSignalCount = 1;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+  reqs.ginStrongSignalsRequired = false;
+  TESTCHECK(createDevComms(reqs));
+
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    signalBasicKernel<<<1, 1, 0, streams[i]>>>(devComms[i], 0, (ncclGinSignal_t)0, true, GinSignalType::Weak);
+  }
+  syncAllDevices();
+  cudaError_t err = cudaGetLastError();
+  ASSERT_EQ(err, cudaSuccess) << "Kernel failed: " << cudaGetErrorString(err);
+}
+
+TEST_F(GinSignalMisc_test, weak_basic_inc) {
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.ginSignalCount = 1;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+  reqs.ginStrongSignalsRequired = false;
+  TESTCHECK(createDevComms(reqs));
+
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    signalBasicKernel<<<1, 1, 0, streams[i]>>>(devComms[i], 0, (ncclGinSignal_t)0, false, GinSignalType::Weak);
+  }
+  syncAllDevices();
+  cudaError_t err = cudaGetLastError();
+  ASSERT_EQ(err, cudaSuccess) << "Kernel failed: " << cudaGetErrorString(err);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
-// Test instantiation
+// Parameterized test instantiation
 ////////////////////////////////////////////////////////////////////////////////
 
 std::string GinSignalParamsName(const ::testing::TestParamInfo<GinSignalParams>& info) {
@@ -267,10 +314,10 @@ INSTANTIATE_TEST_CASE_P(
   Test,
   GinSignal_test,
   ::testing::Values(
-    GinSignalParams{0, 0},  // Signal 0, Context 0
-    GinSignalParams{0, 1},  // Signal 0, Context 1
-    GinSignalParams{1, 0},  // Signal 1, Context 0
-    GinSignalParams{1, 1}   // Signal 1, Context 1
+    GinSignalParams{0, 0, GinSignalType::Strong},
+    GinSignalParams{0, 1, GinSignalType::Legacy},
+    GinSignalParams{1, 0, GinSignalType::Legacy},
+    GinSignalParams{1, 1, GinSignalType::Strong}
   ),
   GinSignalParamsName
 );
