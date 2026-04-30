@@ -9,6 +9,9 @@ BUILDDIR             ?= $(abspath $(MKFILE_DIR)/../../build)
 NCCL4PY_DIR          := $(abspath $(MKFILE_DIR))
 NCCL4PY_BINDINGS_DIR := $(NCCL4PY_DIR)/nccl/bindings
 DIST_DIR             := $(BUILDDIR)/dist
+NCCL_HOME            ?= $(BUILDDIR)
+NCCL_INCLUDE_DIR     ?= $(NCCL_HOME)/include
+NCCL_LIB_DIR         ?= $(NCCL_HOME)/lib
 
 ifdef CUDA_HOME
 CUDA_VERSION := $(shell $(CUDA_HOME)/bin/nvcc --version 2>/dev/null | sed -n 's/.*release \([0-9]\+\.[0-9]\+\).*/\1/p')
@@ -46,7 +49,7 @@ dev: check-cuda
 
 build: check-cuda
 	@echo "Using Python: $$($(UV) run python --version)"
-	$(UV) build --out-dir "$(DIST_DIR)" "$(NCCL4PY_DIR)"
+	NCCL_HOME="$(NCCL_HOME)" NCCL_INCLUDE_DIR="$(NCCL_INCLUDE_DIR)" NCCL_LIB_DIR="$(NCCL_LIB_DIR)" $(UV) build --out-dir "$(DIST_DIR)" "$(NCCL4PY_DIR)"
 	@echo "Wheel built successfully in $(DIST_DIR)"
 
 clean:

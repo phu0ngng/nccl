@@ -315,7 +315,10 @@ if(BUILD_NCCL4PY)
 endif()
 
 if(BUILD_NCCL_EP)
-  add_subdirectory(contrib/nccl_ep)
+  add_subdirectory(bindings/nccl4py/native/nccl_ep)
+  target_compile_options(nccl_ep_shared PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:-fvisibility=default>
+  )
 endif()
 
 ###################### CMake package config for find_package(NCCL) ######################

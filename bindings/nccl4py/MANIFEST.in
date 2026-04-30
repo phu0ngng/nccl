@@ -1,5 +1,6 @@
 # Include nccl package with all source files
-recursive-include nccl *.pyx *.pxd
+recursive-include nccl *.py *.pyx *.pxd
+recursive-include native/nccl_ep *
 
 # Exclude directories not needed in sdist
 prune tests
@@ -13,4 +14,4 @@ exclude uv.lock
 global-exclude .gitignore .gitattributes
 
 # Exclude compiled/generated files
-global-exclude *.so *.cpp *.c
+global-exclude *.so

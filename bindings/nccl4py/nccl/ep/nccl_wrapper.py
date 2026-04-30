@@ -13,6 +13,10 @@ import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
+_PACKAGE_NCCL_EP_LIBRARY = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "lib", "libnccl_ep.so")
+)
+
 # Optional torch import for communicator creation
 try:
     import torch
@@ -355,9 +359,10 @@ class NCCLLibrary:
         """Find NCCL EP library.
 
         Search order:
-        1. NCCL_HOME/lib/libnccl_ep.so (preferred - dedicated EP library)
-        2. NCCL_HOME/lib/libnccl.so (fallback - if EP symbols are in main library)
-        3. System library path for nccl_ep or nccl
+        1. NCCL_HOME/lib/libnccl_ep.so (explicit external EP build)
+        2. Packaged nccl/ep/lib/libnccl_ep.so
+        3. NCCL_HOME/lib/libnccl.so (fallback - if EP symbols are in main library)
+        4. System library path for nccl_ep or nccl
         """
         # Find NCCL EP library
         nccl_home = os.environ.get('NCCL_HOME')
@@ -367,6 +372,10 @@ class NCCLLibrary:
             if os.path.exists(ep_lib_path):
                 return ep_lib_path
 
+        if os.path.exists(_PACKAGE_NCCL_EP_LIBRARY):
+            return _PACKAGE_NCCL_EP_LIBRARY
+
+        if nccl_home:
             # Fall back to main NCCL library (if EP symbols are linked in)
             lib_path = os.path.join(nccl_home, 'lib', 'libnccl.so')
             if os.path.exists(lib_path):
