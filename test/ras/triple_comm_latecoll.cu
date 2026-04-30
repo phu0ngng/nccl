@@ -13,12 +13,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <stdint.h>
-
-#include <unistd.h>
+#include <chrono>
+#include <thread>
+#include <vector>
 
 #include "cuda_runtime.h"
 #include "nccl.h"
 #include "mpi.h"
+#include "os.h"
 
 #define MPICHECK(cmd) do {                          \
   int e = cmd;                                      \
@@ -47,18 +49,9 @@
   }                                                 \
 } while(0)
 
-static uint64_t getHostHash(const char* string) {
-  // Based on DJB2a, result = result * 33 ^ char
-  uint64_t result = 5381;
-  for (int c = 0; string[c] != '\0'; c++){
-    result = ((result << 5) + result) ^ string[c];
-  }
-  return result;
-}
-
 static void getHostName(char* hostname, int maxlen) {
-  gethostname(hostname, maxlen);
-  for (int i=0; i< maxlen; i++) {
+  ncclTestGetHostname(hostname, maxlen);
+  for (int i=0; i< maxlen && hostname[i] != '\0'; i++) {
     if (hostname[i] == '.') {
         hostname[i] = '\0';
         return;
@@ -88,11 +81,11 @@ int main(int argc, char* argv[])
   assert(nMpiRanks >= 2);
 
   // Calculating localRank based on hostname which is used in selecting a GPU
-  uint64_t hostHashs[nMpiRanks];
+  std::vector<uint64_t> hostHashs(nMpiRanks);
   char hostname[1024];
   getHostName(hostname, 1024);
-  hostHashs[mpiRank] = getHostHash(hostname);
-  MPICHECK(MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, hostHashs, sizeof(uint64_t), MPI_BYTE, MPI_COMM_WORLD));
+  hostHashs[mpiRank] = ncclTestGetHostHash(hostname);
+  MPICHECK(MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, hostHashs.data(), sizeof(uint64_t), MPI_BYTE, MPI_COMM_WORLD));
   for (int p=0; p<nMpiRanks; p++) {
      if (p == mpiRank) break;
      if (hostHashs[p] == hostHashs[mpiRank]) localRank++;
@@ -137,14 +130,14 @@ int main(int argc, char* argv[])
   // Creating comm1
   if (myRank1 >= 0)
     NCCLCHECK(ncclCommInitRankConfig(&comm1, nRanks1, id1, myRank1, &config));
-  sleep(5);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
   if (mpiRank == 0) launchRasClient("triple_comm_latecoll.after_comm1.out");
 
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
 
   // Splitting comm1 into comm2 and comm3
   NCCLCHECK(ncclCommSplit(comm1, (myRank2 != -1), myRank1, (myRank2 != -1 ? &comm2 : &comm3), nullptr));
-  sleep(5);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
   if (mpiRank == 0) launchRasClient("triple_comm_latecoll.after_commsplit.out");
 
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
@@ -188,7 +181,7 @@ int main(int argc, char* argv[])
     if (mpiRank == 0)
       printf("finished the 5 comm2 allreduce calls and a broadcast\n");
   }
-  sleep(5);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
   if (mpiRank == 0) launchRasClient("triple_comm_latecoll.after_colls_indiv.out");
 
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
@@ -202,7 +195,7 @@ int main(int argc, char* argv[])
   NCCLCHECK(ncclBroadcast(sendbuff, recvbuff, size, ncclFloat, 0, comm1, s1));
   NCCLCHECK(ncclGroupEnd());
   CUDACHECK(cudaStreamSynchronize(s1));
-  sleep(5);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
   if (mpiRank == 0) {
     printf("finished the aggregated 10 allreduce calls and a broadcast\n");
     launchRasClient("triple_comm_latecoll.after_colls_agg.out");
@@ -237,20 +230,20 @@ int main(int argc, char* argv[])
     printf("finished the two graph launches\n");
   CUDACHECK(cudaGraphExecDestroy(instance));
   CUDACHECK(cudaGraphDestroy(graph));
-  sleep(5);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
   if (mpiRank == 0) launchRasClient("triple_comm_latecoll.after_colls_graph.out");
 
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
 
   // Delaying the last process.
   if (myRank1 == nRanks1-1)
-    sleep(10);
+    std::this_thread::sleep_for(std::chrono::seconds(10));
 
   // Communicating over comm1 using collectives
   for (int i = 0; i < 10; i++)
     NCCLCHECK(ncclAllReduce(sendbuff, recvbuff, size, ncclFloat, ncclSum, comm1, s1));
   NCCLCHECK(ncclBroadcast(sendbuff, recvbuff, size, ncclFloat, 0, comm1, s1));
-  sleep(5);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
   if (mpiRank == 0) launchRasClient("triple_comm_latecoll.after_delay.out");
 
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));

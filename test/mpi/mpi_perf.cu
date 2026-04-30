@@ -4,8 +4,6 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include <sys/types.h>
-#include <unistd.h>
 #include <stdio.h>
 
 #include "nccl.h"

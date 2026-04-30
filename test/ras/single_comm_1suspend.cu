@@ -9,13 +9,20 @@
 #include <cstdio>
 #include <cstdlib>
 #include <stdint.h>
+#include <chrono>
+#include <thread>
+#include <vector>
 
+#ifdef NCCL_OS_WINDOWS
+#error "Suspend tests require POSIX signals (kill/SIGSTOP) and cannot build on Windows"
+#endif
 #include <signal.h>
 #include <unistd.h>
 
 #include "cuda_runtime.h"
 #include "nccl.h"
 #include "mpi.h"
+#include "os.h"
 
 #define MPICHECK(cmd) do {                          \
   int e = cmd;                                      \
@@ -44,18 +51,9 @@
   }                                                 \
 } while(0)
 
-static uint64_t getHostHash(const char* string) {
-  // Based on DJB2a, result = result * 33 ^ char
-  uint64_t result = 5381;
-  for (int c = 0; string[c] != '\0'; c++){
-    result = ((result << 5) + result) ^ string[c];
-  }
-  return result;
-}
-
 static void getHostName(char* hostname, int maxlen) {
-  gethostname(hostname, maxlen);
-  for (int i=0; i< maxlen; i++) {
+  ncclTestGetHostname(hostname, maxlen);
+  for (int i=0; i< maxlen && hostname[i] != '\0'; i++) {
     if (hostname[i] == '.') {
         hostname[i] = '\0';
         return;
@@ -84,11 +82,11 @@ int main(int argc, char* argv[])
   assert(nMpiRanks >= 2);
 
   // Calculating localRank based on hostname which is used in selecting a GPU
-  uint64_t hostHashs[nMpiRanks];
+  std::vector<uint64_t> hostHashs(nMpiRanks);
   char hostname[1024];
   getHostName(hostname, 1024);
-  hostHashs[mpiRank] = getHostHash(hostname);
-  MPICHECK(MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, hostHashs, sizeof(uint64_t), MPI_BYTE, MPI_COMM_WORLD));
+  hostHashs[mpiRank] = ncclTestGetHostHash(hostname);
+  MPICHECK(MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, hostHashs.data(), sizeof(uint64_t), MPI_BYTE, MPI_COMM_WORLD));
   for (int p=0; p<nMpiRanks; p++) {
      if (p == mpiRank) break;
      if (hostHashs[p] == hostHashs[mpiRank]) localRank++;
@@ -108,29 +106,29 @@ int main(int argc, char* argv[])
   // Initializing NCCL
   NCCLCHECK(ncclCommInitRank(&comm, nRanks, id, myRank));
 
-  sleep(5);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
 
   if (myRank == nRanks - 1) {
     kill(getpid(), SIGSTOP);
   }
 
-  sleep(2);
+  std::this_thread::sleep_for(std::chrono::seconds(2));
 
   // Should block until at least 5 seconds after suspend and indicate leg
   // timeouts and incomplete information.
   if (mpiRank == 0) launchRasClient("single_comm_1suspend.02s_after_suspend.out");
 
-  sleep(10);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   // Should indicate incomplete information.
   if (mpiRank == 0) launchRasClient("single_comm_1suspend.12s_after_suspend.out");
 
-  sleep(58);
+  std::this_thread::sleep_for(std::chrono::seconds(58));
 
   // Should indicate a dead process.
   if (mpiRank == 0) launchRasClient("single_comm_1suspend.70s_after_suspend.out");
 
-  sleep(10);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   // Finalizing NCCL
   ncclCommDestroy(comm);

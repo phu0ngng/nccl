@@ -11,10 +11,16 @@ set(RAS_TEST_SOURCES
     single_comm_mixedcoll.cu
     single_comm_idle.cu
     single_comm_1exit.cu
-    single_comm_1suspend.cu
-    single_comm_2suspend.cu
-    single_comm_4suspend.cu
 )
+
+# Suspend tests use kill()/SIGSTOP with no Windows equivalent
+if(NOT NCCL_OS_WINDOWS)
+    list(APPEND RAS_TEST_SOURCES
+        single_comm_1suspend.cu
+        single_comm_2suspend.cu
+        single_comm_4suspend.cu
+    )
+endif()
 
 # Add each test as a separate executable
 foreach(TEST_SOURCE ${RAS_TEST_SOURCES})
@@ -30,6 +36,7 @@ foreach(TEST_SOURCE ${RAS_TEST_SOURCES})
     target_include_directories(${TEST_NAME}
         PRIVATE
         ${CMAKE_BINARY_DIR}/include
+        ${CMAKE_SOURCE_DIR}/test/os
         ${MPI_CXX_INCLUDE_DIRS}
     )
 
@@ -37,6 +44,7 @@ foreach(TEST_SOURCE ${RAS_TEST_SOURCES})
     target_link_libraries(${TEST_NAME}
         PRIVATE
         nccl
+        nccl_test_os
         ${CUDAToolkit_LIBRARIES}
         MPI::MPI_CXX
     )

@@ -1,5 +1,6 @@
 # Replay tests CMake configuration
-if(MPI_FOUND)
+# replay.cu uses POSIX shared memory (shm_open/mmap) and Linux syscalls
+if(MPI_FOUND AND NOT NCCL_OS_WINDOWS)
     set(REPLAY_TEST_SOURCES
         replay.cu
     )
@@ -38,6 +39,8 @@ if(MPI_FOUND)
     add_custom_target(copy_traces ALL
         DEPENDS ${CMAKE_BINARY_DIR}/test/replay/traces
     )
+elseif(NCCL_OS_WINDOWS)
+    message(WARNING "Replay test requires POSIX APIs, skipping on Windows")
 else()
     message(WARNING "MPI not found, skipping replay tests")
 endif()

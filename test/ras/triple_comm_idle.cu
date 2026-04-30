@@ -17,11 +17,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <stdint.h>
-#include <unistd.h>
+#include <chrono>
+#include <thread>
+#include <vector>
 
 #include "cuda_runtime.h"
 #include "nccl.h"
 #include "mpi.h"
+#include "os.h"
 
 #define MPICHECK(cmd) do {                          \
   int e = cmd;                                      \
@@ -50,18 +53,9 @@
   }                                                 \
 } while(0)
 
-static uint64_t getHostHash(const char* string) {
-  // Based on DJB2a, result = result * 33 ^ char
-  uint64_t result = 5381;
-  for (int c = 0; string[c] != '\0'; c++){
-    result = ((result << 5) + result) ^ string[c];
-  }
-  return result;
-}
-
 static void getHostName(char* hostname, int maxlen) {
-  gethostname(hostname, maxlen);
-  for (int i=0; i< maxlen; i++) {
+  ncclTestGetHostname(hostname, maxlen);
+  for (int i=0; i< maxlen && hostname[i] != '\0'; i++) {
     if (hostname[i] == '.') {
         hostname[i] = '\0';
         return;
@@ -90,11 +84,11 @@ int main(int argc, char* argv[])
   assert(nMpiRanks >= 2);
 
   // Calculating localRank based on hostname which is used in selecting a GPU
-  uint64_t hostHashs[nMpiRanks];
+  std::vector<uint64_t> hostHashs(nMpiRanks);
   char hostname[1024];
   getHostName(hostname, 1024);
-  hostHashs[mpiRank] = getHostHash(hostname);
-  MPICHECK(MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, hostHashs, sizeof(uint64_t), MPI_BYTE, MPI_COMM_WORLD));
+  hostHashs[mpiRank] = ncclTestGetHostHash(hostname);
+  MPICHECK(MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, hostHashs.data(), sizeof(uint64_t), MPI_BYTE, MPI_COMM_WORLD));
   for (int p=0; p<nMpiRanks; p++) {
      if (p == mpiRank) break;
      if (hostHashs[p] == hostHashs[mpiRank]) localRank++;
@@ -139,21 +133,21 @@ int main(int argc, char* argv[])
   // Initializing NCCL
   if (myRank1 >= 0)
     NCCLCHECK(ncclCommInitRank(&comm1, nRanks1, id1, myRank1));
-  sleep(5);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
   if (mpiRank == 0) launchRasClient("triple_comm_idle.after_comm1.out");
 
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
 
   if (myRank2 >= 0)
     NCCLCHECK(ncclCommInitRank(&comm2, nRanks2, id2, myRank2));
-  sleep(5);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
   if (mpiRank == 0) launchRasClient("triple_comm_idle.after_comm2.out");
 
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
 
   if (myRank3 >= 0)
     NCCLCHECK(ncclCommInitRank(&comm3, nRanks3, id3, myRank3));
-  sleep(5);
+  std::this_thread::sleep_for(std::chrono::seconds(5));
   if (mpiRank == 0) launchRasClient("triple_comm_idle.after_comm3.out");
 
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
