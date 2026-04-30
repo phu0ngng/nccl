@@ -1630,6 +1630,9 @@ unit-tests-bia:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     DYN_MEM_TESTS: 1
     PARAM_TESTS: 1
+    GIN_TESTS: 1
+    GIN_TESTS_GPI: 0
+    SPCX_PLUGIN: "/lustre/fsw/coreai_libraries_nccl/ci/libnccl-net-spcx.so"
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -2365,6 +2368,9 @@ apitest-bia:
     # Re-enable after resovle https://nvbugspro.nvidia.com/bug/5680492
     API_TESTS_RMA: 0
     API_TESTS_DEVICE_API: 1
+    GIN_TESTS: 1
+    GIN_TESTS_GPI: 0
+    SPCX_PLUGIN: "/lustre/fsw/coreai_libraries_nccl/ci/libnccl-net-spcx.so"
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -3610,6 +3616,9 @@ perftest-multi-bia:
     # Re-enable after resolving https://nvbugspro.nvidia.com/bug/5793707
     WORKAROUND_NVBUG_5793707: 1
     RUN_GDRCOPY_TESTS: "1"
+    GIN_TESTS: 1
+    GIN_TESTS_GPI: 0
+    SPCX_PLUGIN: "/lustre/fsw/coreai_libraries_nccl/ci/libnccl-net-spcx.so"
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh

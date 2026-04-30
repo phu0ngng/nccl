@@ -142,6 +142,9 @@ if [ "$DEVICE_API" != "0" ]; then
     # try proxy and gdaki
     run_command "alltoall_perf_device_gin_proxy_${impl}" $RUN_MODE $NGPUS "" "NCCL_GIN_TYPE=2" "$NCCL_HOME/test/perf/alltoall_perf" "$range $opts -R 2 -D $impl"
     run_command "alltoall_perf_device_gin_gdaki_${impl}" $RUN_MODE $NGPUS "" "NCCL_GIN_TYPE=3" "$NCCL_HOME/test/perf/alltoall_perf" "$range $opts -R 2 -D $impl"
+    if [[ "${GIN_TESTS_GPI}" -eq 1 ]] ; then
+      run_command "alltoall_perf_device_gin_gpi_${impl}" $RUN_MODE $NGPUS "" "NCCL_GIN_TYPE=4 NCCL_NET_PLUGIN=$SPCX_PLUGIN" "$NCCL_HOME/test/perf/alltoall_perf" "$range $opts -R 2 -D $impl"
+    fi
   done
   # hybrid (lsa/gin) tests
   for impl in 4; do
@@ -531,6 +534,9 @@ if [ "$CROSS_CLIQUE_EMULATED" == "1" ]; then
     for impl in 3; do
       run_command "xclique_alltoall_perf_gin_proxy_${impl}" $RUN_MODE $NGPUS "" "$xc_env NCCL_GIN_TYPE=2" "$xc_wrapper $NCCL_HOME/test/perf/alltoall_perf" "$xc_range $xc_opts -R 2 -D $impl"
       run_command "xclique_alltoall_perf_gin_gdaki_${impl}" $RUN_MODE $NGPUS "" "$xc_env NCCL_GIN_TYPE=3" "$xc_wrapper $NCCL_HOME/test/perf/alltoall_perf" "$xc_range $xc_opts -R 2 -D $impl"
+      if [[ "${GIN_TESTS_GPI}" -eq 1 ]] ; then
+        run_command "xclique_alltoall_perf_gin_gpi_${impl}" $RUN_MODE $NGPUS "" "NCCL_GIN_TYPE=4 NCCL_NET_PLUGIN=$SPCX_PLUGIN" "$xc_wrapper $NCCL_HOME/test/perf/alltoall_perf" "$xc_range $xc_opts -R 2 -D $impl"
+      fi
     done
     for impl in 4; do
       run_command "xclique_alltoall_perf_hybrid_${impl}" $RUN_MODE $NGPUS "" "$xc_env" "$xc_wrapper $NCCL_HOME/test/perf/alltoall_perf" "$xc_range $xc_opts -R 2 -D $impl"

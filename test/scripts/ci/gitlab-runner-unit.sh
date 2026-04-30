@@ -257,20 +257,29 @@ if [[ "${GIN_TESTS}" -eq 1 ]] ; then
 
   run_gin_test_suite "auto"
 
+  if [[ "${GIN_TESTS_GPI}" -eq 1 ]] ; then
+    export NCCL_GIN_TYPE=4
+    export NCCL_NET_PLUGIN=$SPCX_PLUGIN
+    run_gin_test_suite "gpi"
+  fi
+
   if [[ "${GIN_TESTS_GDAKI_GPU_SM}" -eq 1 ]] ; then
     export NCCL_GIN_TYPE=3
     export NCCL_GIN_GDAKI_NIC_HANDLER=2
+    export NCCL_NET_PLUGIN=none
     run_gin_test_suite "gdaki_gpusm"
   fi
 
   if [[ "${GIN_TESTS_GDAKI_CPU_ASSISTED}" -eq 1 ]] ; then
     export NCCL_GIN_TYPE=3
     export NCCL_GIN_GDAKI_NIC_HANDLER=1
+    export NCCL_NET_PLUGIN=none
     run_gin_test_suite "gdaki_cpuassisted"
   fi
 
   if [[ "${GIN_TESTS_CPU_PROXY}" -eq 1 ]] ; then
     export NCCL_GIN_TYPE=2
+    export NCCL_NET_PLUGIN=none
     run_gin_test_suite "cpuproxy"
   fi
 else
