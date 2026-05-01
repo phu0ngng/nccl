@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="310" viewBox="0 0 500 310">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#6b7280"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="250" y="18" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="bold" fill="#111">ncclTopoSystem — Without mlopart</text>
+
+  <!-- PCI (center 250,46) w=175 h=34 -->
+  <rect x="163" y="29" width="175" height="34" rx="6" fill="#f9fafb" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="250" y="51" text-anchor="middle" font-family="'Courier New',monospace" font-size="11" fill="#374151">PCI 0002:81:00.0</text>
+
+  <!-- PCI → DEV -->
+  <line x1="250" y1="63" x2="250" y2="110" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- DEV (center 250,127) w=175 h=34 -->
+  <rect x="163" y="110" width="175" height="34" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="250" y="132" text-anchor="middle" font-family="'Courier New',monospace" font-size="11" fill="#1e40af">DEV/0-281000</text>
+
+  <!-- DEV → GPU: (230,144) → (82,255) -->
+  <line x1="230" y1="144" x2="84" y2="255" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="143" y="196" text-anchor="end" font-family="Arial,sans-serif" font-size="10" fill="#374151">LOC[5000 GB/s]</text>
+
+  <!-- DEV → NVS: (250,144) → (250,255) -->
+  <line x1="250" y1="144" x2="250" y2="255" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="256" y="205" font-family="Arial,sans-serif" font-size="10" fill="#374151">NVL[1368 GB/s]</text>
+
+  <!-- DEV → CPU: (270,144) → (418,255) -->
+  <line x1="270" y1="144" x2="418" y2="255" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="358" y="196" font-family="Arial,sans-serif" font-size="10" fill="#374151">C2C[395 GB/s]</text>
+
+  <!-- GPU (center 80,272) w=155 h=34 -->
+  <rect x="3" y="255" width="155" height="34" rx="6" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="80" y="277" text-anchor="middle" font-family="'Courier New',monospace" font-size="11" fill="#14532d">GPU/0-281000</text>
+
+  <!-- NVS (center 250,272) w=155 h=34 -->
+  <rect x="173" y="255" width="155" height="34" rx="6" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.5"/>
+  <text x="250" y="270" text-anchor="middle" font-family="'Courier New',monospace" font-size="10" fill="#713f12">NVS/0-0</text>
+  <text x="250" y="283" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" fill="#92400e">(NVSwitch)</text>
+
+  <!-- CPU (center 420,272) w=140 h=34 -->
+  <rect x="350" y="255" width="140" height="34" rx="6" fill="#f9fafb" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="420" y="277" text-anchor="middle" font-family="'Courier New',monospace" font-size="11" fill="#374151">CPU</text>
+</svg>

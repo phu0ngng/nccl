@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="500" viewBox="0 0 780 500">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#6b7280"/>
+    </marker>
+    <marker id="arr-s" markerWidth="8" markerHeight="6" refX="1" refY="3" orient="auto-start-reverse">
+      <polygon points="0 0, 8 3, 0 6" fill="#6b7280"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="390" y="18" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="bold" fill="#111">ncclTopoSystem — With mlopart</text>
+
+  <!-- NVS (center 390,52) w=155 h=34 -->
+  <rect x="313" y="35" width="155" height="34" rx="6" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.5"/>
+  <text x="390" y="53" text-anchor="middle" font-family="'Courier New',monospace" font-size="10" fill="#713f12">NVS/0-0</text>
+  <text x="390" y="64" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" fill="#92400e">(NVSwitch)</text>
+
+  <!-- NVS → DEV0: (364,69) → (193,183) -->
+  <line x1="364" y1="69" x2="193" y2="183" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="267" y="120" text-anchor="end" font-family="Arial,sans-serif" font-size="10" fill="#374151">NVL[684 GB/s] (50%)</text>
+
+  <!-- NVS → DEV1: (416,69) → (587,183) -->
+  <line x1="416" y1="69" x2="587" y2="183" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="513" y="120" font-family="Arial,sans-serif" font-size="10" fill="#374151">NVL[684 GB/s] (50%)</text>
+
+  <!-- PCI bounding box (dashed) around DEV0 and DEV1 -->
+  <rect x="63" y="168" width="654" height="65" rx="8" fill="none" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="78" y="180" font-family="Arial,sans-serif" font-size="10" fill="#9ca3af">PCI 0002:81:00.0</text>
+
+  <!-- DEV0 (center 165,200) w=175 h=34 -->
+  <rect x="78" y="183" width="175" height="34" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="165" y="200" text-anchor="middle" font-family="'Courier New',monospace" font-size="11" fill="#1e40af">DEV/0-281001</text>
+  <text x="165" y="212" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" fill="#3b82f6">(uGPU 0)</text>
+
+  <!-- DEV0 ↔ DEV1: (253,200) ↔ (528,200) -->
+  <line x1="253" y1="200" x2="528" y2="200" stroke="#6b7280" stroke-width="1.5" marker-start="url(#arr-s)" marker-end="url(#arr)"/>
+  <text x="390" y="192" text-anchor="middle" font-family="Arial,sans-serif" font-size="10" fill="#374151">LOC[2618 GB/s] (L2 stitch)</text>
+
+  <!-- DEV1 (center 615,200) w=175 h=34 -->
+  <rect x="528" y="183" width="175" height="34" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="615" y="200" text-anchor="middle" font-family="'Courier New',monospace" font-size="11" fill="#1e40af">DEV/0-281003</text>
+  <text x="615" y="212" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" fill="#3b82f6">(uGPU 1)</text>
+
+  <!-- DEV0 → GPU0: (156,217) → (91,348) -->
+  <line x1="156" y1="217" x2="93" y2="348" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="114" y="282" text-anchor="end" font-family="Arial,sans-serif" font-size="10" fill="#374151">LOC[5000 GB/s]</text>
+
+  <!-- DEV0 → XC2C: (188,217) → (367,348) -->
+  <line x1="188" y1="217" x2="367" y2="348" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="264" y="295" text-anchor="end" font-family="Arial,sans-serif" font-size="10" fill="#374151">C2C[395 GB/s]</text>
+
+  <!-- DEV1 → XC2C: (592,217) → (413,348) -->
+  <line x1="592" y1="217" x2="413" y2="348" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="516" y="295" font-family="Arial,sans-serif" font-size="10" fill="#374151">C2C[395 GB/s]</text>
+
+  <!-- DEV1 → GPU1: (624,217) → (689,348) -->
+  <line x1="624" y1="217" x2="689" y2="348" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="666" y="282" font-family="Arial,sans-serif" font-size="10" fill="#374151">LOC[5000 GB/s]</text>
+
+  <!-- GPU0 (center 80,365) w=155 h=34 -->
+  <rect x="3" y="348" width="155" height="34" rx="6" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="80" y="370" text-anchor="middle" font-family="'Courier New',monospace" font-size="11" fill="#14532d">GPU/0-281001</text>
+
+  <!-- XC2C (center 390,365) w=185 h=34 -->
+  <rect x="298" y="348" width="185" height="34" rx="6" fill="#fde8d8" stroke="#f97316" stroke-width="1.5"/>
+  <text x="390" y="363" text-anchor="middle" font-family="'Courier New',monospace" font-size="10" fill="#7c2d12">XC2C/0-281000</text>
+  <text x="390" y="376" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" fill="#9a3412">(C2C bridge)</text>
+
+  <!-- GPU1 (center 700,365) w=155 h=34 -->
+  <rect x="623" y="348" width="155" height="34" rx="6" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="700" y="370" text-anchor="middle" font-family="'Courier New',monospace" font-size="11" fill="#14532d">GPU/0-281003</text>
+
+  <!-- XC2C → CPU: (390,382) → (390,448) -->
+  <line x1="390" y1="382" x2="390" y2="448" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="396" y="420" font-family="Arial,sans-serif" font-size="10" fill="#374151">C2C[395 GB/s]</text>
+
+  <!-- CPU (center 390,465) w=120 h=34 -->
+  <rect x="330" y="448" width="120" height="34" rx="6" fill="#f9fafb" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="390" y="470" text-anchor="middle" font-family="'Courier New',monospace" font-size="11" fill="#374151">CPU</text>
+</svg>

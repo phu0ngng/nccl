@@ -2,6 +2,14 @@
 <!-- update with extra care -->
 # NCCL - PLC
 <!------------------------------------->
+## version 2.31
+
+- [VR Support for mps with mlopart](items/id_146481d4/VR_Support_for_mps_with_mlopart.md)
+<!-- V2_31_DO_NOT_MOVE -->
+
+<!------------------------------------->
+
+<!------------------------------------->
 ## version 2.30
 
 - [GIN get](items/id_c3200938/GIN_get.md)

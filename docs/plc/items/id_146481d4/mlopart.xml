@@ -1,0 +1,102 @@
+<system version="1">
+  <cpu host_hash="0x90e96cb920977170" numaid="0" affinity="00000000,00000000,000000ff,ffffffff,ffffffff,ffff0000,00000000,00000000,00ffffff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0001:01:00.0" class="0x060400" vendor="0x15b3" device="0x197c" subsystem_vendor="0x0000" subsystem_device="0x0000" link_speed="64.0 GT/s PCIe" link_width="16">
+      <pci busid="0001:03:00.0" class="0x020700" vendor="0x15b3" device="0x1025" subsystem_vendor="0x15b3" subsystem_device="0x0671" link_speed="64.0 GT/s PCIe" link_width="16">
+        <nic>
+          <net name="mlx5_0" dev="0" latency="0" speed="800000" port="1" guid="0x9452a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+          <net name="smi0" dev="1" latency="0" speed="800000" port="2" guid="0x9452a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0002:81:00.0" class="0x030200" vendor="0x10de" device="0x3041" subsystem_vendor="0x10de" subsystem_device="0x221a" link_speed="64.0 GT/s PCIe" link_width="2">
+      <gpu dev="0" sm="107" rank="0" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="56376" count="7"/>
+      </gpu>
+      <gpu dev="0" sm="107" rank="1" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="56376" count="7"/>
+      </gpu>
+    </pci>
+    <pci busid="0003:01:00.0" class="0x020700" vendor="0x15b3" device="0x1025" subsystem_vendor="0x15b3" subsystem_device="0x0671" link_speed="64.0 GT/s PCIe" link_width="16">
+      <nic>
+        <net name="mlx5_1" dev="2" latency="0" speed="800000" port="1" guid="0x8452a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+        <net name="smi1" dev="3" latency="0" speed="800000" port="2" guid="0x8452a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+      </nic>
+    </pci>
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x15b3" device="0x197c" subsystem_vendor="0x0000" subsystem_device="0x0000" link_speed="64.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.0" class="0x020700" vendor="0x15b3" device="0x1025" subsystem_vendor="0x15b3" subsystem_device="0x0671" link_speed="64.0 GT/s PCIe" link_width="16">
+        <nic>
+          <net name="mlx5_2" dev="4" latency="0" speed="800000" port="1" guid="0xb488a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+          <net name="smi2" dev="5" latency="0" speed="800000" port="2" guid="0xb488a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0006:01:00.0" class="0x020700" vendor="0x15b3" device="0x1025" subsystem_vendor="0x15b3" subsystem_device="0x0671" link_speed="64.0 GT/s PCIe" link_width="16">
+      <nic>
+        <net name="mlx5_5" dev="6" latency="0" speed="800000" port="1" guid="0xa488a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+        <net name="smi5" dev="7" latency="0" speed="800000" port="2" guid="0xa488a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+      </nic>
+    </pci>
+    <pci busid="0002:c1:00.0" class="0x030200" vendor="0x10de" device="0x3041" subsystem_vendor="0x10de" subsystem_device="0x221a" link_speed="64.0 GT/s PCIe" link_width="2">
+      <gpu dev="1" sm="107" rank="2" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="56376" count="7"/>
+      </gpu>
+      <gpu dev="1" sm="107" rank="3" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="56376" count="7"/>
+      </gpu>
+    </pci>
+  </cpu>
+  <cpu host_hash="0x90e96cb920977170" numaid="1" affinity="ffffffff,ffffffff,ffffff00,00000000,00000000,0000ffff,ffffffff,ffffffff,ff000000,00000000,00000000" arch="arm64">
+    <pci busid="0009:01:00.0" class="0x060400" vendor="0x15b3" device="0x197c" subsystem_vendor="0x0000" subsystem_device="0x0000" link_speed="64.0 GT/s PCIe" link_width="16">
+      <pci busid="0009:03:00.0" class="0x020700" vendor="0x15b3" device="0x1025" subsystem_vendor="0x15b3" subsystem_device="0x0671" link_speed="64.0 GT/s PCIe" link_width="16">
+        <nic>
+          <net name="mlx5_6" dev="8" latency="0" speed="800000" port="1" guid="0x7497a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+          <net name="smi6" dev="9" latency="0" speed="800000" port="2" guid="0x7497a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="000b:01:00.0" class="0x020700" vendor="0x15b3" device="0x1025" subsystem_vendor="0x15b3" subsystem_device="0x0671" link_speed="64.0 GT/s PCIe" link_width="16">
+      <nic>
+        <net name="mlx5_7" dev="10" latency="0" speed="800000" port="1" guid="0x6497a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+        <net name="smi7" dev="11" latency="0" speed="800000" port="2" guid="0x6497a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+      </nic>
+    </pci>
+    <pci busid="000c:01:00.0" class="0x060400" vendor="0x15b3" device="0x197c" subsystem_vendor="0x0000" subsystem_device="0x0000" link_speed="64.0 GT/s PCIe" link_width="16">
+      <pci busid="000c:03:00.0" class="0x020700" vendor="0x15b3" device="0x1025" subsystem_vendor="0x15b3" subsystem_device="0x0671" link_speed="64.0 GT/s PCIe" link_width="16">
+        <nic>
+          <net name="mlx5_8" dev="12" latency="0" speed="800000" port="1" guid="0x3467a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+          <net name="smi8" dev="13" latency="0" speed="800000" port="2" guid="0x3467a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="000e:01:00.0" class="0x020700" vendor="0x15b3" device="0x1025" subsystem_vendor="0x15b3" subsystem_device="0x0671" link_speed="64.0 GT/s PCIe" link_width="16">
+      <nic>
+        <net name="mlx5_11" dev="14" latency="0" speed="800000" port="1" guid="0x2467a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+        <net name="smi11" dev="15" latency="0" speed="800000" port="2" guid="0x2467a400037ffbf0" maxconn="131072" gdr="1" net="1" gin="1"/>
+      </nic>
+    </pci>
+    <pci busid="000a:81:00.0" class="0x030200" vendor="0x10de" device="0x3041" subsystem_vendor="0x10de" subsystem_device="0x221a" link_speed="64.0 GT/s PCIe" link_width="2">
+      <gpu dev="2" sm="107" rank="4" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="56376" count="7"/>
+      </gpu>
+      <gpu dev="2" sm="107" rank="5" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="56376" count="7"/>
+      </gpu>
+    </pci>
+    <pci busid="000a:e1:00.0" class="0x030200" vendor="0x10de" device="0x3041" subsystem_vendor="0x10de" subsystem_device="0x221a" link_speed="64.0 GT/s PCIe" link_width="2">
+      <gpu dev="3" sm="107" rank="6" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="56376" count="7"/>
+      </gpu>
+      <gpu dev="3" sm="107" rank="7" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="56376" count="7"/>
+      </gpu>
+    </pci>
+  </cpu>
+</system>
