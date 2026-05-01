@@ -98,7 +98,7 @@ void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngp
 
     if (dumpDiff) {
       // Line: margin + 2 columns, ~8 chars per GPU total. Min 256 for headers.
-      char* line = (char*)malloc(std::max(ngpus * 8, 256));
+      char* line = (char*)malloc(std::max(ngpus * 12, 256));
       int margin = 37;
       int width = std::max(3*ngpus+10, 40);
 
@@ -995,6 +995,7 @@ int main(int argc, const char* argv[]) {
     RUN("P9-4V");
     RUN("HP-ARM-V100");
     RUN("GB200");
+    RUN("GB200-mlopart-NVLD4"); // mlopart version of GB200
     { // GB200-Ariel-NVL8
       RUN("GB200-Ariel-NVL8");
       RUN_FUSION("GB200-Ariel-NVL8", /*PXB=*/5);

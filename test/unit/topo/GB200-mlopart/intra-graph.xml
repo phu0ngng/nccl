@@ -1,0 +1,514 @@
+<graphs version="1">
+  <graph id="0" pattern="4" crossnic="0" nchannels="16" speedintra="45" speedinter="45" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0">
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+  </graph>
+  <graph id="1" pattern="1" crossnic="0" nchannels="16" speedintra="45" speedinter="24" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0">
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+  </graph>
+  <graph id="2" pattern="3" crossnic="0" nchannels="16" speedintra="24" speedinter="24" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0">
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+    <channel>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+    </channel>
+    <channel>
+      <gpu dev="0x3" rank="6"/>
+      <gpu dev="0x3" rank="7"/>
+      <gpu dev="0" rank="0"/>
+      <gpu dev="0" rank="1"/>
+      <gpu dev="0x1" rank="2"/>
+      <gpu dev="0x1" rank="3"/>
+      <gpu dev="0x2" rank="4"/>
+      <gpu dev="0x2" rank="5"/>
+    </channel>
+  </graph>
+  <graph id="3" pattern="5" crossnic="0" nchannels="8" speedintra="40" speedinter="80" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0">
+    <channel>
+      <gpu dev="0" rank="0"/>
+    </channel>
+    <channel>
+      <gpu dev="0" rank="1"/>
+    </channel>
+    <channel>
+      <gpu dev="0x1" rank="2"/>
+    </channel>
+    <channel>
+      <gpu dev="0x1" rank="3"/>
+    </channel>
+    <channel>
+      <gpu dev="0x2" rank="4"/>
+    </channel>
+    <channel>
+      <gpu dev="0x2" rank="5"/>
+    </channel>
+    <channel>
+      <gpu dev="0x3" rank="6"/>
+    </channel>
+    <channel>
+      <gpu dev="0x3" rank="7"/>
+    </channel>
+  </graph>
+</graphs>
