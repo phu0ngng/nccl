@@ -9,9 +9,6 @@ BUILDDIR             ?= $(abspath $(MKFILE_DIR)/../../build)
 NCCL4PY_DIR          := $(abspath $(MKFILE_DIR))
 NCCL4PY_BINDINGS_DIR := $(NCCL4PY_DIR)/nccl/bindings
 DIST_DIR             := $(BUILDDIR)/dist
-NCCL_HOME            ?= $(BUILDDIR)
-NCCL_INCLUDE_DIR     ?= $(NCCL_HOME)/include
-NCCL_LIB_DIR         ?= $(NCCL_HOME)/lib
 
 ifdef CUDA_HOME
 CUDA_VERSION := $(shell $(CUDA_HOME)/bin/nvcc --version 2>/dev/null | sed -n 's/.*release \([0-9]\+\.[0-9]\+\).*/\1/p')
@@ -49,16 +46,14 @@ dev: check-cuda
 
 build: check-cuda
 	@echo "Using Python: $$($(UV) run python --version)"
-	NCCL_HOME="$(NCCL_HOME)" NCCL_INCLUDE_DIR="$(NCCL_INCLUDE_DIR)" NCCL_LIB_DIR="$(NCCL_LIB_DIR)" $(UV) build --out-dir "$(DIST_DIR)" "$(NCCL4PY_DIR)"
+	$(UV) build --out-dir "$(DIST_DIR)" "$(NCCL4PY_DIR)"
 	@echo "Wheel built successfully in $(DIST_DIR)"
 
 clean:
 	@rm -rf $(DIST_DIR) \
 			$(NCCL4PY_DIR)/*.egg-info \
 			$(NCCL4PY_DIR)/build \
-			$(NCCL4PY_DIR)/dist \
-			$(NCCL4PY_DIR)/native/nccl_ep \
-			$(NCCL4PY_DIR)/nccl/ep
+			$(NCCL4PY_DIR)/dist
 	@find $(NCCL4PY_DIR) -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	@find $(NCCL4PY_DIR) -type f -name "*.pyc" -delete 2>/dev/null || true
 	@find $(NCCL4PY_BINDINGS_DIR) -type f \( -name "*.so" -o -name "*.cpp" -o -name "*.c" \) -delete 2>/dev/null || true
