@@ -1,5 +1,16 @@
 #!/bin/bash
 
+# WARNING!!!
+#
+# Any change to the expected library dependencies needs to be discussed by the NCCL dev team, and
+# specifically to be cleared by Sylvain.
+#
+# Changes to the libraries could cause incompatibility between NCCL versions for existing
+# customers.
+#
+# Do not modify this file to allow additional libraries to be used without first getting
+# that approval!
+
 lib=$1
 if [ "$lib" == "" ]; then
   lib=`dirname $0`/../../lib/libnccl.so

@@ -65,3 +65,8 @@ src/include/nccl_device/impl/*.h
 
 ^[NCCL-EP] @subhadeepb @artemp @kgioioso @lschneider
 contrib/nccl_ep/
+
+[Sylvain Watches]
+test/binary/ @sjeaugey
+!test/binary/CMakeLists.txt
+!test/binary/Makefile

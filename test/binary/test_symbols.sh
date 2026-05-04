@@ -1,5 +1,16 @@
 #!/bin/bash
 
+# WARNING!!!
+#
+# Any change to the symbols which are exported needs to be discussed by the NCCL dev team, and
+# specifically to be cleared by Sylvain.
+#
+# Changes to the exported symbols could cause incompatibility between NCCL versions for existing
+# customers.
+#
+# Do not modify this file to allow additional symbols to be exported without first getting
+# that approval!
+
 lib=$1
 if [ "$lib" == "" ]; then
   lib=`dirname $0`/../../lib/libnccl.so
