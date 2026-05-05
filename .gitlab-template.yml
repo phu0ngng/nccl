@@ -164,8 +164,9 @@ variables:
 
 .pre-nyx:
   rules:
-    - if: $RUN_ON_PRE_NYX == "1"
-      when: always
+    # - if: $RUN_ON_PRE_NYX == "1"
+    #   when: always
+    - when: never
   tags:
     - prenyx
   variables:

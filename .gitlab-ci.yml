@@ -260,7 +260,7 @@ build-ipp6:
     - <<: *pre_submit_nccl4py_rule
     - if: $RUN_ON_IPP6 == "1"
       when: always
-    - if: $RUN_ON_DRACO_OCI == "1" || $RUN_ON_EOS == "1" || $RUN_ON_CW_DFW == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_AWS == "1"
+    - if: $RUN_ON_DRACO_OCI == "1" || $RUN_ON_EOS == "1" || $RUN_ON_CW_DFW == "1" || $RUN_ON_AWS == "1"
       when: always
     - if: $RUN_ON_P100 == "1" || $RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1"
       when: always
@@ -528,11 +528,11 @@ setup-pre-nyx:
     - .pre-nyx
     - .setup
   rules:
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-    - <<: *pre_submit_nccl_ep_rule
-    - if: $RUN_ON_PRE_NYX == "1"
-      when: always
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
+    # - <<: *pre_submit_nccl_ep_rule
+    # - if: $RUN_ON_PRE_NYX == "1"
+    #   when: always
     - when: never
   needs: ["build-ipp6"]
   variables:
@@ -748,7 +748,7 @@ nccl_ep_ci:
   needs:
     - setup-ipp6
     - setup-eos
-    - setup-pre-nyx
+    # - setup-pre-nyx
     - setup-pre-tyche
   rules:
     - <<: *post_submit_rule
@@ -1298,10 +1298,11 @@ unit-tests-pre-nyx:
   extends:
     - .pre-nyx
   rules:
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-    - if: $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
-      when: always
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
+    # - if: $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
+    #   when: always
+    - when: never
   needs:
     - setup-pre-nyx
   variables:
@@ -1730,9 +1731,10 @@ unit-tests-rma-pre-nyx:
   extends:
     - .pre-nyx
   rules:
-    - <<: *post_submit_rule
-    - if: $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
-      when: always
+    # - <<: *post_submit_rule
+    # - if: $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
+    #   when: always
+    - when: never
   needs: [setup-pre-nyx]
   variables:
     SLURM_TIME: 20
@@ -2171,10 +2173,10 @@ apitest-pre-nyx:
   extends:
     - .pre-nyx
   rules:
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-    - if: $RUN_ON_PRE_NYX == "1" && $RUN_API_TESTS == "1"
-      when: always
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
+    # - if: $RUN_ON_PRE_NYX == "1" && $RUN_API_TESTS == "1"
+    #   when: always
     - when: never
   needs:
     - setup-pre-nyx
@@ -2840,10 +2842,10 @@ perftest-single-pre-nyx:
   extends:
     - .pre-nyx
   rules:
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-    - if: $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_SINGLE == "1"
-      when: always
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
+    # - if: $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+    #   when: always
     - when: never
   needs:
     - setup-pre-nyx
@@ -3312,10 +3314,10 @@ perftest-multi-pre-nyx:
   extends:
     - .pre-nyx
   rules:
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-    - if: $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
-      when: always
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
+    # - if: $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
+    #   when: always
     - when: never
   needs:
     - setup-pre-nyx
@@ -4735,15 +4737,16 @@ cleanup-pre-nyx:
   extends:
     - .cleanup
   rules:
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-      when: on_success
-    - <<: *pre_submit_nccl_ep_rule
-      when: on_success
-    - if: $RUN_ON_PRE_NYX == "1"
-      when: on_success
-    - if: $RUN_NCCL_EP_CI == "1"
-      when: on_success
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
+    #   when: on_success
+    # - <<: *pre_submit_nccl_ep_rule
+    #   when: on_success
+    # - if: $RUN_ON_PRE_NYX == "1"
+    #   when: on_success
+    # - if: $RUN_NCCL_EP_CI == "1"
+    #   when: on_success
+    - when: never
   tags:
     - prenyx
   needs:
