@@ -227,6 +227,26 @@ workflow:
   when: always
 
 ##
+## GitHub PR status reporting
+## When GITHUB_SHA is set, report pipeline status as a GitHub commit status check.
+## Also requires GITHUB_REPO (e.g. NVIDIA/nccl) and GITHUB_TOKEN as CI/CD variables.
+##
+
+github-status-pending:
+  stage: .pre
+  rules:
+    - if: $GITHUB_SHA
+      when: always
+    - when: never
+  tags:
+    - ipp6-nccl
+  allow_failure: true
+  variables:
+    GIT_DEPTH: 1
+  script:
+    - test/scripts/ci/github-status.sh pending
+
+##
 ## Stage: build - Start...
 ##
 
@@ -766,6 +786,8 @@ github-sim:
   stage: downstream
   needs: []
   rules:
+    - if: $GITHUB_SHA
+      when: never
     - <<: *pre_submit_public_rule
     - when: never
   trigger:
@@ -4607,6 +4629,32 @@ summarize-pipeline:
     - ipp6-nccl
   script:
     - ./test/scripts/gitlab-runner-summary.sh
+
+github-status-success:
+  stage: summary
+  dependencies: []
+  rules:
+    - if: $GITHUB_SHA
+      when: on_success
+    - when: never
+  tags:
+    - ipp6-nccl
+  allow_failure: true
+  script:
+    - test/scripts/ci/github-status.sh success
+
+github-status-failure:
+  stage: summary
+  dependencies: []
+  rules:
+    - if: $GITHUB_SHA
+      when: on_failure
+    - when: never
+  tags:
+    - ipp6-nccl
+  allow_failure: true
+  script:
+    - test/scripts/ci/github-status.sh failure
 
 ##
 ## Stage: summary - Finish!
