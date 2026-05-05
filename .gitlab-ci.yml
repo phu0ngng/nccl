@@ -79,6 +79,7 @@ variables:
   RUN_NCCL4PY_CI: "0"
   RUN_DDP_TEST: "0"
   RUN_REDUCE_COPY_SWEEP: "0"
+  RUN_DEEP_EP_CI: "0"
   # By default skip certain tests
   SKIP_MULTI_RANK_GPU: "1"
 
@@ -263,6 +264,8 @@ build-ipp6:
       when: always
     - if: $RUN_ON_P100 == "1" || $RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1"
       when: always
+    - if: $RUN_DEEP_EP_CI == "1"
+      when: always
     - when: never
   script:
     - docker/make.sh --ci-build --use-build-cluster-image ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx,gc-classic
@@ -357,6 +360,8 @@ build-theia:
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
     - if: $RUN_ON_THEIA == "1"
+      when: always
+    - if: $RUN_DEEP_EP_CI == "1"
       when: always
     - when: never
   script:
@@ -547,6 +552,8 @@ setup-pre-tyche:
       when: always
     - if: $RUN_NCCL_EP_CI == "1"
       when: always
+    - if: $RUN_DEEP_EP_CI == "1"
+      when: always
     - when: never
   needs: ["build-pre-tyche"]
   variables:
@@ -562,6 +569,8 @@ setup-theia:
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
     - if: $RUN_ON_THEIA == "1"
+      when: always
+    - if: $RUN_DEEP_EP_CI == "1"
       when: always
     - when: never
   needs: ["build-theia"]
@@ -613,6 +622,8 @@ setup-eos:
     - if: $RUN_ON_EOS == "1"
       when: always
     - if: $RUN_NCCL_EP_CI == "1"
+      when: always
+    - if: $RUN_DEEP_EP_CI == "1"
       when: always
     - when: never
   needs: ["build-ipp6"]
@@ -766,6 +777,24 @@ github-sim:
   variables:
     CI_INFRA_REF: main
     MODE: sim
+
+deep_ep_ci:
+  stage: downstream
+  needs:
+    - setup-eos
+    - setup-theia
+    - setup-pre-tyche
+  rules:
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+    - if: $RUN_DEEP_EP_CI == "1"
+      when: always
+    - when: never
+  trigger:
+    include: test/scripts/ci/DeepEP-v2/.gitlab-ci.yml
+    strategy: depend
+  variables:
+    PARENT_PIPELINE_ID: $CI_PIPELINE_ID
 
 ##
 ## Stage: downstream - Finish!
@@ -4601,6 +4630,8 @@ cleanup-eos:
       when: on_success
     - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
       when: on_success
+    - if: $RUN_DEEP_EP_CI == "1"
+      when: on_success
   tags:
     - nccl-eos
   needs:
@@ -4628,6 +4659,8 @@ cleanup-eos:
     - job: cs-eos-inter-debug
       optional: true
     - job: cs-eos-inter-full
+      optional: true
+    - job: deep_ep_ci
       optional: true
   variables:
     INSTALL_DIR: "${EOS_INSTALL_DIR}"
@@ -4749,6 +4782,8 @@ cleanup-pre-tyche:
       when: on_success
     - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
       when: on_success
+    - if: $RUN_DEEP_EP_CI == "1"
+      when: on_success
   tags:
     - ptyche
   needs:
@@ -4781,6 +4816,8 @@ cleanup-pre-tyche:
       optional: true
     - job: reduce-copy-sweep-pre-tyche
       optional: true
+    - job: deep_ep_ci
+      optional: true
   variables:
     INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
 
@@ -4795,6 +4832,8 @@ cleanup-theia:
     - if: $RUN_ON_THEIA == "1"
       when: on_success
     - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
+      when: on_success
+    - if: $RUN_DEEP_EP_CI == "1"
       when: on_success
   tags:
     - lyris
@@ -4833,6 +4872,8 @@ cleanup-theia:
     - job: cs-theia-inter-full
       optional: true
     - job: reduce-copy-sweep-theia
+      optional: true
+    - job: deep_ep_ci
       optional: true
   variables:
     INSTALL_DIR: "${THEIA_INSTALL_DIR}"
