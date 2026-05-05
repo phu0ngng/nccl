@@ -64,10 +64,10 @@ __global__ void ping_pong_kernel(
             if (DEBUG) printf("[Rank %d] Waiting for signal from peer (signal_id=%u, expected_value=%lu) current_signal_value=%lu\n", pe, signal_id, expected_signal_value, current_signal_value);
 
             // Wait for signal from peer with expected iteration count
-            { uint64_t* ptr = ncclGinCall<ncclGinApi_GetSignalPtr>(ctx, signal_id);
-              cuda::atomic_ref<uint64_t> ref{*ptr};
+            { ncclGinOffsetPtr sig = ncclGinCall<ncclGinApi_GetSignalPtr>(ctx, signal_id);
+              cuda::atomic_ref<uint64_t> ref{*sig.ptr};
               do current_signal_value = ref.load(cuda::memory_order_acquire);
-              while (current_signal_value < expected_signal_value);
+              while (current_signal_value - sig.offset < expected_signal_value);
             }
             if (DEBUG) printf("[Rank %d] Received signal (signal_id=%u, expected_value=%lu) current_signal_value=%lu, sending data (peer=%d, nelems=%llu, signal_id=%u)\n", pe, signal_id, expected_signal_value, current_signal_value, peer, nelems, signal_id);
 
@@ -104,10 +104,10 @@ __global__ void ping_pong_kernel(
             if (DEBUG) printf("[Rank %d] Sent data, waiting for signal (signal_id=%u, expected_value=%lu) current_signal_value=%lu\n", pe, signal_id, expected_signal_value, current_signal_value);
 
             // Wait for signal from peer with expected iteration count
-            { uint64_t* ptr = ncclGinCall<ncclGinApi_GetSignalPtr>(ctx, signal_id);
-              cuda::atomic_ref<uint64_t> ref{*ptr};
+            { ncclGinOffsetPtr sig = ncclGinCall<ncclGinApi_GetSignalPtr>(ctx, signal_id);
+              cuda::atomic_ref<uint64_t> ref{*sig.ptr};
               do current_signal_value = ref.load(cuda::memory_order_acquire);
-              while (current_signal_value < expected_signal_value);
+              while (current_signal_value - sig.offset < expected_signal_value);
             }
             if (DEBUG) printf("[Rank %d] Received signal (signal_id=%u, expected_value=%lu) current_signal_value=%lu\n", pe, signal_id, expected_signal_value, current_signal_value);
         }
