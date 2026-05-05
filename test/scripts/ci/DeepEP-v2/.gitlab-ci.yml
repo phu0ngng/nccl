@@ -1,0 +1,143 @@
+stages:
+  - test
+  - cleanup
+
+variables:
+  # Gitlab variables
+  FF_USE_FASTZIP: "true"
+  FF_ENABLE_JOB_CLEANUP: "true"
+  FF_TIMESTAMPS: true
+  GIT_STRATEGY: fetch
+  GIT_CLEAN_FLAGS: -ffdx
+  # Common
+  DEEP_EP_CI_DIR: test/scripts/ci/DeepEP-v2
+  # Eos
+  EOS_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  EOS_NCCL_INSTALL_DIR: "${EOS_CI_BUILDS_DIR}/install/${PARENT_PIPELINE_ID}/build"
+  EOS_DEEP_EP_INSTALL_DIR: "${EOS_CI_BUILDS_DIR}/install/${CI_PIPELINE_ID}/DeepEP-v2"
+  # Theia
+  THEIA_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  THEIA_NCCL_INSTALL_DIR: "${THEIA_CI_BUILDS_DIR}/install/${PARENT_PIPELINE_ID}/build"
+  THEIA_DEEP_EP_INSTALL_DIR: "${THEIA_CI_BUILDS_DIR}/install/${CI_PIPELINE_ID}/DeepEP-v2"
+  # Pre-Tyche
+  PTYCHE_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  PTYCHE_NCCL_INSTALL_DIR: "${PTYCHE_CI_BUILDS_DIR}/install/${PARENT_PIPELINE_ID}/build"
+  PTYCHE_DEEP_EP_INSTALL_DIR: "${PTYCHE_CI_BUILDS_DIR}/install/${CI_PIPELINE_ID}/DeepEP-v2"
+
+# Allow pipeline to be triggered only via the parent
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"
+    - when: never
+
+##
+## Cluster Templates: Start...
+##
+
+.eos:
+  tags:
+    - nccl-eos
+  variables:
+    CI_BUILDS_DIR: $EOS_CI_BUILDS_DIR
+
+.theia:
+  tags:
+    - lyris
+  variables:
+    CI_BUILDS_DIR: $THEIA_CI_BUILDS_DIR
+
+.ptyche:
+  tags:
+    - ptyche
+  variables:
+    CI_BUILDS_DIR: $PTYCHE_CI_BUILDS_DIR
+
+##
+## Cluster Templates: Finish!
+##
+
+##
+## Stage: test - Start...
+##
+
+# Common test job body. The actual cluster-specific knobs (CLUSTER, NCCL/DeepEP
+# install dirs, parent pipeline needs:) live in .eos-test / .theia-test.
+.base-test-job: &base_test
+  stage: test
+  script:
+    - cd $DEEP_EP_CI_DIR
+    - ./run.sh $CLUSTER
+
+test-eos:
+  extends: .eos
+  needs:
+    - pipeline: $PARENT_PIPELINE_ID
+      job: setup-eos
+  variables:
+    CLUSTER: eos
+    NCCL_INSTALL_DIR: $EOS_NCCL_INSTALL_DIR
+    DEEP_EP_INSTALL_DIR: $EOS_DEEP_EP_INSTALL_DIR
+  <<: *base_test
+
+test-theia:
+  extends: .theia
+  needs:
+    - pipeline: $PARENT_PIPELINE_ID
+      job: setup-theia
+  variables:
+    CLUSTER: theia
+    NCCL_INSTALL_DIR: $THEIA_NCCL_INSTALL_DIR
+    DEEP_EP_INSTALL_DIR: $THEIA_DEEP_EP_INSTALL_DIR
+  <<: *base_test
+
+test-ptyche:
+  extends: .ptyche
+  needs:
+    - pipeline: $PARENT_PIPELINE_ID
+      job: setup-pre-tyche
+  variables:
+    CLUSTER: ptyche
+    NCCL_INSTALL_DIR: $PTYCHE_NCCL_INSTALL_DIR
+    DEEP_EP_INSTALL_DIR: $PTYCHE_DEEP_EP_INSTALL_DIR
+  <<: *base_test
+
+##
+## Stage: test - Finish!
+##
+
+##
+## Stage: cleanup - Start...
+##
+
+.base_cleanup_job: &base_cleanup
+  stage: cleanup
+  script:
+    - rm -rf $DEEP_EP_INSTALL_DIR
+
+cleanup-eos:
+  extends: .eos
+  needs: [test-eos]
+  when: on_success
+  variables:
+    DEEP_EP_INSTALL_DIR: $EOS_DEEP_EP_INSTALL_DIR
+  <<: *base_cleanup
+
+cleanup-theia:
+  extends: .theia
+  needs: [test-theia]
+  when: on_success
+  variables:
+    DEEP_EP_INSTALL_DIR: $THEIA_DEEP_EP_INSTALL_DIR
+  <<: *base_cleanup
+
+cleanup-ptyche:
+  extends: .ptyche
+  needs: [test-ptyche]
+  when: on_success
+  variables:
+    DEEP_EP_INSTALL_DIR: $PTYCHE_DEEP_EP_INSTALL_DIR
+  <<: *base_cleanup
+
+##
+## Stage: cleanup - Finish!
+##

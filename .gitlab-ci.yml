@@ -79,6 +79,7 @@ variables:
   RUN_NCCL4PY_CI: "0"
   RUN_DDP_TEST: "0"
   RUN_REDUCE_COPY_SWEEP: "0"
+  RUN_DEEP_EP_CI: "0"
   # By default skip certain tests
   SKIP_MULTI_RANK_GPU: "1"
 
@@ -264,6 +265,8 @@ build-ipp6:
       when: always
     - if: $RUN_ON_P100 == "1" || $RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1"
       when: always
+    - if: $RUN_DEEP_EP_CI == "1"
+      when: always
     - when: never
   script:
     - docker/make.sh --ci-build --use-build-cluster-image ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx,gc-classic
@@ -331,7 +334,10 @@ build-pre-tyche:
         NCCL_TEST_REDUCE_COPY_TYPES: "all"
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
+    - <<: *pre_submit_nccl_ep_rule
     - if: $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - if: $RUN_NCCL_EP_CI == "1"
       when: always
     - when: never
   script:
@@ -355,6 +361,8 @@ build-theia:
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
     - if: $RUN_ON_THEIA == "1"
+      when: always
+    - if: $RUN_DEEP_EP_CI == "1"
       when: always
     - when: never
   script:
@@ -540,7 +548,12 @@ setup-pre-tyche:
   rules:
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
+    - <<: *pre_submit_nccl_ep_rule
     - if: $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - if: $RUN_NCCL_EP_CI == "1"
+      when: always
+    - if: $RUN_DEEP_EP_CI == "1"
       when: always
     - when: never
   needs: ["build-pre-tyche"]
@@ -557,6 +570,8 @@ setup-theia:
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
     - if: $RUN_ON_THEIA == "1"
+      when: always
+    - if: $RUN_DEEP_EP_CI == "1"
       when: always
     - when: never
   needs: ["build-theia"]
@@ -609,6 +624,8 @@ setup-eos:
       when: always
     - if: $RUN_NCCL_EP_CI == "1"
       when: always
+    - if: $RUN_DEEP_EP_CI == "1"
+      when: always
     - when: never
   needs: ["build-ipp6"]
   variables:
@@ -621,10 +638,11 @@ setup-cw-dfw:
     - .cw-dfw
     - .setup
   rules:
-    # - <<: *post_submit_rule
-    # - <<: *pre_submit_core_rule
-    # - if: $RUN_ON_CW_DFW == "1"
-    #   when: always
+    - if: $RUN_ON_CW_DFW != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
+      when: always
+    - <<: *weekly_rule
     - when: never
   needs: ["build-ipp6"]
   variables:
@@ -734,6 +752,7 @@ nccl_ep_ci:
     - setup-ipp6
     - setup-eos
     - setup-pre-nyx
+    - setup-pre-tyche
   rules:
     - <<: *post_submit_rule
     - <<: *pre_submit_nccl_ep_rule
@@ -754,13 +773,31 @@ github-sim:
     - when: never
   trigger:
     include:
-      - project: nccl/ci-infra
+      - project: gpucomms/cicd-platform
         ref: main
-        file: github-first/.gitlab-ci.yml
+        file: pipelines/github-first/.nccl-filtered-ci.yml
     strategy: depend
   variables:
     CI_INFRA_REF: main
     MODE: sim
+
+deep_ep_ci:
+  stage: downstream
+  needs:
+    - setup-eos
+    - setup-theia
+    - setup-pre-tyche
+  rules:
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+    - if: $RUN_DEEP_EP_CI == "1"
+      when: always
+    - when: never
+  trigger:
+    include: test/scripts/ci/DeepEP-v2/.gitlab-ci.yml
+    strategy: depend
+  variables:
+    PARENT_PIPELINE_ID: $CI_PIPELINE_ID
 
 ##
 ## Stage: downstream - Finish!
@@ -4039,14 +4076,15 @@ perf-regression-polyphe:
 ## Comprehensive performance sweeps across node scales
 ## Templates defined in .gitlab-template.yml
 ##
-## COMPREHENSIVE_SWEEP variable controls which jobs run:
-##   - "off": No comprehensive sweep jobs run
-##   - "debug": Only debug jobs run (1-node intra + 2-node inter per cluster)
-##   - "full": All jobs run (debug + full scale matrices)
+## Weekly pipelines run full-scale comprehensive sweep jobs when the platform is enabled.
+## COMPREHENSIVE_SWEEP controls opt-in non-weekly runs:
+##   - "off": No additional comprehensive sweep jobs run
+##   - "debug": Debug jobs run (1-node intra + 2-node inter per cluster)
+##   - "full": Full-scale matrix jobs run
 ##
 
 #############################################
-# DEBUG Jobs - Run on "debug" or "full" mode
+# DEBUG Jobs - Run only on "debug" mode
 # 1-node intra + 2-node inter per cluster
 #############################################
 
@@ -4087,8 +4125,8 @@ cs-cw-dfw-intra-debug:
     - .cw-dfw
     - .comprehensive-sweep
   rules:
-    # - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_CW_DFW == "1"
-    #   when: always
+    - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_CW_DFW == "1"
+      when: always
     - when: never
   needs:
     - setup-cw-dfw
@@ -4102,8 +4140,8 @@ cs-cw-dfw-inter-debug:
     - .cw-dfw
     - .comprehensive-sweep
   rules:
-    # - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_CW_DFW == "1"
-    #   when: always
+    - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_CW_DFW == "1"
+      when: always
     - when: never
   needs:
     - setup-cw-dfw
@@ -4241,7 +4279,7 @@ cs-polyphe-inter-debug:
     NNODES: 2
 
 #############################################
-# FULL Jobs - Run only on "full" mode
+# FULL Jobs - Run on weekly pipelines or "full" mode
 # All remaining scales (excluding debug scales)
 #############################################
 
@@ -4251,8 +4289,11 @@ cs-eos-inter-full:
     - .eos
     - .comprehensive-sweep
   rules:
-    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_EOS == "1"
+    - if: $RUN_ON_EOS != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
       when: always
+    - <<: *weekly_rule
     - when: never
   needs:
     - setup-eos
@@ -4269,8 +4310,11 @@ cs-cw-dfw-inter-full:
     - .cw-dfw
     - .comprehensive-sweep
   rules:
-    # - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_CW_DFW == "1"
-    #   when: always
+    - if: $RUN_ON_CW_DFW != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
+      when: always
+    - <<: *weekly_rule
     - when: never
   needs:
     - setup-cw-dfw
@@ -4287,8 +4331,11 @@ cs-ptyche-intra-full:
     - .pre-tyche
     - .comprehensive-sweep
   rules:
-    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_PRE_TYCHE == "1"
+    - if: $RUN_ON_PRE_TYCHE != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
       when: always
+    - <<: *weekly_rule
     - when: never
   needs:
     - setup-pre-tyche
@@ -4306,8 +4353,11 @@ cs-ptyche-inter-full:
     - .pre-tyche
     - .comprehensive-sweep
   rules:
-    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_PRE_TYCHE == "1"
+    - if: $RUN_ON_PRE_TYCHE != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
       when: always
+    - <<: *weekly_rule
     - when: never
   needs:
     - setup-pre-tyche
@@ -4327,8 +4377,11 @@ cs-theia-intra-full:
     - .theia
     - .comprehensive-sweep
   rules:
-    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_THEIA == "1"
+    - if: $RUN_ON_THEIA != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
       when: always
+    - <<: *weekly_rule
     - when: never
   needs:
     - setup-theia
@@ -4345,8 +4398,11 @@ cs-theia-inter-full:
     - .theia
     - .comprehensive-sweep
   rules:
-    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_THEIA == "1"
+    - if: $RUN_ON_THEIA != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
       when: always
+    - <<: *weekly_rule
     - when: never
   needs:
     - setup-theia
@@ -4365,8 +4421,11 @@ cs-bia-inter-full:
     - .bia
     - .comprehensive-sweep
   rules:
-    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_BIA == "1"
+    - if: $RUN_ON_BIA != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
       when: always
+    - <<: *weekly_rule
     - when: never
   needs:
     - setup-bia
@@ -4384,9 +4443,12 @@ cs-polyphe-inter-full:
     - .polyphe
     - .comprehensive-sweep
   rules:
-    - when: never
-    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_POLYPHE == "1"
+    - if: $RUN_ON_POLYPHE != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP == "full"
       when: always
+    - <<: *weekly_rule
+    - when: never
   needs:
     - setup-polyphe
   variables:
@@ -4589,6 +4651,8 @@ cleanup-eos:
       when: on_success
     - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
       when: on_success
+    - if: $RUN_DEEP_EP_CI == "1"
+      when: on_success
   tags:
     - nccl-eos
   needs:
@@ -4617,6 +4681,8 @@ cleanup-eos:
       optional: true
     - job: cs-eos-inter-full
       optional: true
+    - job: deep_ep_ci
+      optional: true
   variables:
     INSTALL_DIR: "${EOS_INSTALL_DIR}"
 
@@ -4625,13 +4691,12 @@ cleanup-cw-dfw:
   extends:
     - .cleanup
   rules:
-    # - <<: *post_submit_rule
-    # - <<: *pre_submit_core_rule
-    #   when: on_success
-    # - if: $RUN_ON_CW_DFW == "1"
-    #   when: on_success
-    # - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
-    #   when: on_success
+    - if: $RUN_ON_CW_DFW != "1"
+      when: never
+    - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
+      when: on_success
+    - <<: *weekly_rule
+      when: on_success
     - when: never
   tags:
     - nccl-cw-dfw
@@ -4730,9 +4795,15 @@ cleanup-pre-tyche:
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
       when: on_success
+    - <<: *pre_submit_nccl_ep_rule
+      when: on_success
     - if: $RUN_ON_PRE_TYCHE == "1"
       when: on_success
+    - if: $RUN_NCCL_EP_CI == "1"
+      when: on_success
     - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
+      when: on_success
+    - if: $RUN_DEEP_EP_CI == "1"
       when: on_success
   tags:
     - ptyche
@@ -4740,6 +4811,8 @@ cleanup-pre-tyche:
     - job: build-pre-tyche
       optional: true
     - job: setup-pre-tyche
+      optional: true
+    - job: nccl_ep_ci
       optional: true
     - job: unit-tests-pre-tyche
       optional: true
@@ -4764,6 +4837,8 @@ cleanup-pre-tyche:
       optional: true
     - job: reduce-copy-sweep-pre-tyche
       optional: true
+    - job: deep_ep_ci
+      optional: true
   variables:
     INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
 
@@ -4778,6 +4853,8 @@ cleanup-theia:
     - if: $RUN_ON_THEIA == "1"
       when: on_success
     - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
+      when: on_success
+    - if: $RUN_DEEP_EP_CI == "1"
       when: on_success
   tags:
     - lyris
@@ -4816,6 +4893,8 @@ cleanup-theia:
     - job: cs-theia-inter-full
       optional: true
     - job: reduce-copy-sweep-theia
+      optional: true
+    - job: deep_ep_ci
       optional: true
   variables:
     INSTALL_DIR: "${THEIA_INSTALL_DIR}"

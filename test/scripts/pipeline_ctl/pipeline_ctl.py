@@ -33,6 +33,7 @@ TESTS = [
     ("Inspector", "RUN_INSPECTOR_TESTS"),
     ("NCCL EP", "RUN_NCCL_EP_CI"),
     ("NCCL4PY", "RUN_NCCL4PY_CI"),
+    ("DeepEP", "RUN_DEEP_EP_CI"),
 ]
 
 CLUSTERS = [
