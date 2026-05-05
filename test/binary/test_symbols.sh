@@ -22,12 +22,9 @@ if [ ! -f $lib ]; then
   exit 1
 fi
 
-# For ncclsymbols and pncclsymbols, use --demangle option to avoid C++ symbol messing up the $othersymbols list
-ncclsymbols=`nm --demangle --dynamic --defined-only $lib | cut -c 20- | grep "^nccl"`
-pncclsymbols=`nm --demangle --dynamic --defined-only $lib | cut -c 20- | grep "^pnccl"`
-othersymbols=`nm --demangle --dynamic --defined-only $lib | cut -c 20- | grep -v "^nccl" | grep -v "^pnccl"`
-# ncclparamsymbols are symbols from NCCL_PARAM framework
-ncclparamsymbols=`nm --demangle --dynamic --defined-only $lib | cut -c 20- | grep "^ncclParam"`
+ncclsymbols=`nm --dynamic --defined-only $lib | cut -c 20- | grep "^nccl"`
+pncclsymbols=`nm --dynamic --defined-only $lib | cut -c 20- | grep "^pnccl"`
+othersymbols=`nm --dynamic --defined-only $lib | cut -c 20- | grep -v "^nccl" | grep -v "^pnccl"`
 no_pncclsymbol="ncclResetDebugInitInternal"
 errors=""
 
@@ -58,18 +55,6 @@ while [ "$ncclsymbols" != "" ]; do
   if [ "$found" == "1" ]; then
     echo -e "\e[32m\e[1m  [OK]\e[0m\t $ncclsym [profiling symbol waived]"
     continue;
-  fi
-
-  found=0
-  for param in $ncclparamsymbols; do
-    if [ "$param" = "$ncclsym" ]; then
-      found=1
-      break
-    fi
-  done
-  if [ "$found" == "1" ]; then
-    # echo "skip param symbol $ncclsym"
-    continue
   fi
 
   for pncclsym in $pncclsymbols; do
