@@ -204,6 +204,7 @@ def test_nccl_gintype_parity():
     assert int(t.NcclGinType.NONE)  == int(b.GinType.NONE)
     assert int(t.NcclGinType.PROXY) == int(b.GinType.PROXY)
     assert int(t.NcclGinType.GDAKI) == int(b.GinType.GDAKI)
+    assert int(t.NcclGinType.GPI)   == int(b.GinType.GPI)
 
 
 def test_nccl_ginconnectiontype_parity():
