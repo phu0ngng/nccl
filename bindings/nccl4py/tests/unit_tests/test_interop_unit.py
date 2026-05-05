@@ -110,10 +110,10 @@ def test_cupy_to_nccl_dtype_unsupported():
         nccl_cupy._to_nccl_dtype(np.dtype("complex128"))
 
     # Test int16/uint16 - not supported by NCCL
-    with pytest.raises(NcclInvalid, match="does not support.*16-bit"):
+    with pytest.raises(NcclInvalid, match="int16.*has no NCCL equivalent"):
         nccl_cupy._to_nccl_dtype(np.dtype("int16"))
 
-    with pytest.raises(NcclInvalid, match="does not support.*16-bit"):
+    with pytest.raises(NcclInvalid, match="uint16.*has no NCCL equivalent"):
         nccl_cupy._to_nccl_dtype(np.dtype("uint16"))
 
     # Test object dtype
@@ -121,7 +121,7 @@ def test_cupy_to_nccl_dtype_unsupported():
         nccl_cupy._to_nccl_dtype(np.dtype("object"))
 
     # Test string dtype
-    with pytest.raises(NcclInvalid, match="string.*has no NCCL equivalent"):
+    with pytest.raises(NcclInvalid, match="has no NCCL equivalent"):
         nccl_cupy._to_nccl_dtype(np.dtype("U10"))
 
 
