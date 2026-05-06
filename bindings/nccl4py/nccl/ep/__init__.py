@@ -1,72 +1,127 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+#
+# See LICENSE.txt for more license information
 
-"""NCCL EP: Low-level Python bindings for NCCL EP operations.
+"""NCCL4Py EP API: Low-level access to NCCL EP operations.
 
-This package provides low-level ctypes bindings to the NCCL EP C API.
-
-Pure Python (ctypes) implementation - no compilation needed!
-Works immediately with LD_PRELOAD setup.
+This module provides the public Python API for NCCL EP ctypes bindings.
 """
 
-from ._version import __version__
+import re
+
+# Runtime library discovery
+from cuda.pathfinder import DynamicLibNotFoundError, load_nvidia_dynamic_lib
+
+_SUPPORTED_CUDA_MAJOR = "13"
+_CUDA_COMPILER_RELEASE_RE = re.compile(rb"Cuda compilation tools, release ([0-9]+)\.")
+
+
+def _cuda_major_from_nccl_library(path: str) -> str:
+    majors: set[str] = set()
+    tail = b""
+    try:
+        with open(path, "rb") as library:
+            while True:
+                chunk = library.read(1024 * 1024)
+                if not chunk:
+                    break
+
+                data = tail + chunk
+                for match in _CUDA_COMPILER_RELEASE_RE.finditer(data):
+                    majors.add(match.group(1).decode("ascii"))
+                tail = data[-128:]
+    except OSError as e:
+        raise ImportError(f"nccl.ep failed to read CUDA version from {path}: {e}") from e
+
+    if len(majors) > 1:
+        detected = ", ".join(sorted(majors))
+        raise ImportError(
+            f"nccl.ep found multiple CUDA compiler versions in {path}: {detected}."
+        )
+
+    if not majors:
+        raise ImportError(f"nccl.ep failed to read CUDA version from {path}.")
+
+    return next(iter(majors))
+
+
+def _check_cuda_major() -> None:
+    try:
+        loaded = load_nvidia_dynamic_lib("nccl")
+    except DynamicLibNotFoundError as e:
+        raise ImportError("nccl.ep failed to load libnccl.so.") from e
+
+    if loaded is None or loaded.abs_path is None:
+        raise ImportError("nccl.ep failed to resolve the path to libnccl.so.")
+
+    path = loaded.abs_path
+    source = f"libnccl.so resolved by cuda.pathfinder from {path}"
+    if loaded.found_via:
+        source = f"{source} ({loaded.found_via})"
+
+    major = _cuda_major_from_nccl_library(path)
+    if major != _SUPPORTED_CUDA_MAJOR:
+        raise ImportError(
+            "nccl.ep only supports CUDA 13: the libnccl_ep.so packaged with this "
+            "nccl4py wheel was built against CUDA 13 and is binary-incompatible "
+            f"with other CUDA major versions. Detected CUDA {major} in {source}. "
+            "Reinstall nccl4py with the cu13 extra (pip install 'nccl4py[cu13]'), "
+            "or use a CUDA 13 NCCL build."
+        )
+
+
+_check_cuda_major()
+
+from .nccl_wrapper import (
+    HAVE_TORCH,
+    NCCLLibrary,
+    _load_nccl_ep_library,
+    get_nccl_comm_from_group,
+    ncclEpAlgorithm_t,
+    ncclEpDispatchConfig_t,
+    ncclEpGroupConfig_t,
+    ncclEpHandleConfig_t,
+    ncclEpTensorTag_t,
+    ncclNDTensor_t,
+    ncclEpAllocFn_t,
+    ncclEpFreeFn_t,
+    CUDA_SUCCESS,
+    CUDA_ERROR_MEMORY_ALLOCATION,
+)
 
 try:
-    from .nccl_wrapper import (
-        HAVE_TORCH,
-        NCCLLibrary,
-        get_nccl_comm_from_group,
-        ncclDataTypeEnum,
-        ncclEpAlgorithm_t,
-        ncclEpDispatchConfig_t,
-        ncclEpGroupConfig_t,
-        ncclEpHandleConfig_t,
-        ncclEpTensorTag_t,
-        ncclNDTensor_t,
-        ncclEpAllocFn_t,
-        ncclEpFreeFn_t,
-        CUDA_SUCCESS,
-        CUDA_ERROR_MEMORY_ALLOCATION,
-    )
+    _load_nccl_ep_library()
+except Exception as e:
+    raise ImportError("nccl.ep failed to load libnccl_ep.so.") from e
 
-    HAVE_NCCL_EP = True
-    NCCL_EP_ALGO_LOW_LATENCY = ncclEpAlgorithm_t.NCCL_EP_ALGO_LOW_LATENCY
-    NCCL_EP_ALGO_HIGH_THROUGHPUT = ncclEpAlgorithm_t.NCCL_EP_ALGO_HIGH_THROUGHPUT
+NCCL_EP_ALGO_LOW_LATENCY = ncclEpAlgorithm_t.NCCL_EP_ALGO_LOW_LATENCY
+NCCL_EP_ALGO_HIGH_THROUGHPUT = ncclEpAlgorithm_t.NCCL_EP_ALGO_HIGH_THROUGHPUT
 
-except ImportError as e:
-    HAVE_NCCL_EP = False
-    HAVE_TORCH = False
-    _import_error = str(e)
-    NCCL_EP_ALGO_LOW_LATENCY = 0
-    NCCL_EP_ALGO_HIGH_THROUGHPUT = 1
-
+# The following __all__ exports define the stable, public API surface of NCCL4Py EP.
+# Semantic versioning guarantees apply only to the symbols explicitly listed below.
+# All other modules, functions, and symbols are internal implementation details and are
+# subject to change without notice.
 __all__ = [
-    '__version__',
-    'HAVE_NCCL_EP',
-    'HAVE_TORCH',
-    'NCCLLibrary',
-    'get_nccl_comm_from_group',
-    'ncclDataTypeEnum',
-    'ncclEpAlgorithm_t',
-    'ncclEpDispatchConfig_t',
-    'ncclEpGroupConfig_t',
-    'ncclEpHandleConfig_t',
-    'ncclEpTensorTag_t',
-    'ncclNDTensor_t',
-    'ncclEpAllocFn_t',
-    'ncclEpFreeFn_t',
-    'CUDA_SUCCESS',
-    'CUDA_ERROR_MEMORY_ALLOCATION',
-    'NCCL_EP_ALGO_LOW_LATENCY',
-    'NCCL_EP_ALGO_HIGH_THROUGHPUT',
+    # Availability
+    "HAVE_TORCH",
+    # Library wrapper
+    "NCCLLibrary",
+    "get_nccl_comm_from_group",
+    # Types and enums
+    "ncclEpAlgorithm_t",
+    "ncclEpDispatchConfig_t",
+    "ncclEpGroupConfig_t",
+    "ncclEpHandleConfig_t",
+    "ncclEpTensorTag_t",
+    "ncclNDTensor_t",
+    # Allocator callbacks
+    "ncclEpAllocFn_t",
+    "ncclEpFreeFn_t",
+    # CUDA status constants
+    "CUDA_SUCCESS",
+    "CUDA_ERROR_MEMORY_ALLOCATION",
+    # Algorithm constants
+    "NCCL_EP_ALGO_LOW_LATENCY",
+    "NCCL_EP_ALGO_HIGH_THROUGHPUT",
 ]
-
-if not HAVE_NCCL_EP:
-    import warnings
-    warnings.warn(
-        f"NCCL EP bindings are not available. Error: {_import_error}\n"
-        "Make sure:\n"
-        "  1. NCCL_HOME points to your NCCL EP build\n"
-        "  2. LD_PRELOAD is set to force PyTorch to use custom NCCL\n"
-        "  3. NCCL library has EP extensions"
-    )
