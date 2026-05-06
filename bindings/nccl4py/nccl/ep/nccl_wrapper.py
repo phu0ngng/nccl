@@ -70,6 +70,14 @@ class ncclEpAlgorithm_t:
     NCCL_EP_ALGO_HIGH_THROUGHPUT = 1
 
 
+class ncclEpLayout_t:
+    """Receive buffer layout for dispatch/combine."""
+    NCCL_EP_LAYOUT_AUTO = 0
+    NCCL_EP_LAYOUT_EXPERT_MAJOR = 1
+    NCCL_EP_LAYOUT_RANK_MAJOR = 2
+    NCCL_EP_LAYOUT_FLAT = 3
+
+
 # ncclNDTensor_t is an opaque pointer type
 ncclNDTensor_t = ctypes.c_void_p
 
@@ -78,6 +86,7 @@ class ncclEpGroupConfig_t(ctypes.Structure):
     _fields_ = [
         ("version", ctypes.c_uint),
         ("algorithm", ctypes.c_int),
+        ("layout", ctypes.c_int),
         ("num_experts", ctypes.c_uint),
         ("max_tokens_per_rank", ctypes.c_uint),
         ("token_size_bytes", ctypes.c_uint),
