@@ -9,6 +9,7 @@ operations are provided by :mod:`nccl.core`.
 """
 
 import ctypes
+import ctypes.util
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -18,6 +19,78 @@ import nccl.core as nccl
 _PACKAGE_NCCL_EP_LIBRARY = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "lib", "libnccl_ep.so")
 )
+
+
+def _find_nccl_ep_library() -> str:
+    """Resolve libnccl_ep.so.
+
+    Mirrors :func:`cuda.pathfinder.load_nvidia_dynamic_lib`'s search precedence,
+    with the NVIDIA pip-wheel step replaced by the nccl4py package's bundled
+    location (which is where libnccl_ep.so lives if a complete cu13 nccl4py
+    wheel was installed).
+
+    Search order:
+      1. nccl4py package path (``nccl/ep/lib/libnccl_ep.so``).
+      2. ``$CONDA_PREFIX/lib`` and ``$CONDA_PREFIX/lib64``.
+      3. Dynamic linker default search (``LD_LIBRARY_PATH``, ``ld.so.cache``,
+         standard system paths) via :func:`ctypes.util.find_library`. This also
+         covers the "already loaded into the process" case naturally.
+      4. ``$CUDA_HOME`` / ``$CUDA_PATH`` ``lib`` and ``lib64`` subdirectories.
+      5. SONAME fallback so ``ctypes.CDLL`` does a final ``dlopen`` attempt.
+    """
+    # 1. nccl4py package (replaces cuda.pathfinder's NVIDIA-pip-wheel step)
+    if os.path.exists(_PACKAGE_NCCL_EP_LIBRARY):
+        return _PACKAGE_NCCL_EP_LIBRARY
+
+    # 2. Conda environment
+    conda_prefix = os.environ.get("CONDA_PREFIX")
+    if conda_prefix:
+        for sub in ("lib", "lib64"):
+            candidate = os.path.join(conda_prefix, sub, "libnccl_ep.so")
+            if os.path.exists(candidate):
+                return candidate
+
+    # 3. Dynamic linker default search (LD_LIBRARY_PATH, ld.so.cache, /lib, ...)
+    found = ctypes.util.find_library("nccl_ep")
+    if found:
+        return found
+
+    # 4. CUDA_HOME / CUDA_PATH
+    for env_var in ("CUDA_HOME", "CUDA_PATH"):
+        root = os.environ.get(env_var)
+        if root:
+            for sub in ("lib", "lib64"):
+                candidate = os.path.join(root, sub, "libnccl_ep.so")
+                if os.path.exists(candidate):
+                    return candidate
+
+    # 5. SONAME fallback — let dlopen do its own system search; if it fails,
+    # ctypes.CDLL raises a clear OSError that the caller wraps as ImportError.
+    return "libnccl_ep.so"
+
+
+_funcs: dict[str, Any] = {}
+
+
+def _load_nccl_ep_library() -> None:
+    """Resolve, dlopen, and bind libnccl_ep.so symbols.
+
+    Called once from :mod:`nccl.ep` at import time. Populates the module-level
+    ``_funcs`` table that :class:`NCCLLibrary` instances read from.
+    """
+    global _funcs
+    lib = ctypes.CDLL(_find_nccl_ep_library())
+    bound: dict[str, Any] = {}
+    for func in NCCLLibrary.exported_functions:
+        try:
+            f = getattr(lib, func.name)
+        except AttributeError as e:
+            raise RuntimeError(f"{func.name} is not exported by libnccl_ep.so") from e
+        f.restype = func.restype
+        f.argtypes = func.argtypes
+        bound[func.name] = f
+    _funcs = bound
+
 
 # Optional torch import for communicator creation
 try:
@@ -187,30 +260,12 @@ class NCCLLibrary:
         ]),
     ]
 
-    path_to_library_cache: dict[str, ctypes.CDLL] = {}
-    path_to_dict_mapping: dict[str, dict[str, Any]] = {}
-
-    def __init__(self, so_file: str = _PACKAGE_NCCL_EP_LIBRARY) -> None:
-        if so_file not in NCCLLibrary.path_to_library_cache:
-            lib = ctypes.CDLL(so_file)
-            NCCLLibrary.path_to_library_cache[so_file] = lib
-
-        self.lib = NCCLLibrary.path_to_library_cache[so_file]
-        self.so_file = so_file
-
-        if so_file not in NCCLLibrary.path_to_dict_mapping:
-            _funcs = {}
-            for func in NCCLLibrary.exported_functions:
-                try:
-                    f = getattr(self.lib, func.name)
-                    f.restype = func.restype
-                    f.argtypes = func.argtypes
-                    _funcs[func.name] = f
-                except AttributeError as e:
-                    raise RuntimeError(f"{func.name} is not exported by {so_file}") from e
-            NCCLLibrary.path_to_dict_mapping[so_file] = _funcs
-
-        self._funcs = NCCLLibrary.path_to_dict_mapping[so_file]
+    def __init__(self) -> None:
+        if not _funcs:
+            raise RuntimeError(
+                "libnccl_ep.so has not been loaded; ensure `import nccl.ep` completed without errors"
+            )
+        self._funcs = _funcs
 
     def NCCL_CHECK(self, result):
         if result != 0:
@@ -338,16 +393,6 @@ class NCCLLibrary:
         Note: Internally calls ncclEpComplete (the C++ library symbol name).
         """
         self.NCCL_CHECK(self._funcs["ncclEpComplete"](handle, None, stream))
-
-
-_nccl_ep_library: NCCLLibrary | None = None
-
-
-def _load_nccl_ep_library(so_file: str = _PACKAGE_NCCL_EP_LIBRARY) -> NCCLLibrary:
-    global _nccl_ep_library
-    if _nccl_ep_library is None or _nccl_ep_library.so_file != so_file:
-        _nccl_ep_library = NCCLLibrary(so_file)
-    return _nccl_ep_library
 
 
 def get_nccl_comm_from_group(group=None):

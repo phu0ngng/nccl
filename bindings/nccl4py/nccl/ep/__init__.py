@@ -94,7 +94,14 @@ from .nccl_wrapper import (
 try:
     _load_nccl_ep_library()
 except Exception as e:
-    raise ImportError("nccl.ep failed to load libnccl_ep.so.") from e
+    raise ImportError(
+        "nccl.ep failed to load libnccl_ep.so. The library is searched (in "
+        "order) under the nccl4py package's nccl/ep/lib/ directory, "
+        "$CONDA_PREFIX/lib[64], the dynamic linker's default paths "
+        "(LD_LIBRARY_PATH / ld.so.cache / /lib / /usr/lib), and "
+        "$CUDA_HOME/lib[64]. Install nccl4py with libnccl_ep.so packaged in, "
+        "or place libnccl_ep.so on one of the searched paths."
+    ) from e
 
 NCCL_EP_ALGO_LOW_LATENCY = ncclEpAlgorithm_t.NCCL_EP_ALGO_LOW_LATENCY
 NCCL_EP_ALGO_HIGH_THROUGHPUT = ncclEpAlgorithm_t.NCCL_EP_ALGO_HIGH_THROUGHPUT
