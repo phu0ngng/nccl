@@ -14,10 +14,15 @@ usage() {
 }
 
 # Parse command-line arguments
+CI_BUILD=${CI_BUILD:-0}
 ENABLE_CCACHE=${ENABLE_CCACHE:-0}  # Default to 0 if not set
 
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --ci-build)
+            CI_BUILD=1
+            shift
+            ;;
         --enable-ccache)
             ENABLE_CCACHE=1
             shift
@@ -37,24 +42,18 @@ export MPI_HOME=/usr/local/openmpi
 export LD_LIBRARY_PATH=${MPI_HOME}/lib:/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
 export PATH=/usr/local/cuda/bin:${PATH}
 
-# clean up previous run if clean was requested
-cd /nccl
-if [ -d "build.old" ]; then
-  rm -rf build.old &
-  make clean
-fi
-
-# Create build workspace on local volume inside container
+export workspace=$(pwd)
 tempdir=$(mktemp -d)
-nccl_build_workspace=$tempdir/nccl
-if [ "$CI_BUILD" -eq 1 ]; then
-  # Local clone to carry over tracked files only when building in CI
-  # Add file:// before /nccl to get --depth to work
-  git clone --depth 1 file:///nccl $nccl_build_workspace
-else
+
+if [ "$CI_BUILD" -eq 0 ]; then
+  cd /nccl
+  if [ -d "build.old" ]; then
+    rm -rf build.old && make clean
+  fi
+  workspace=$tempdir/nccl
   # rsync instead of clone to allow untracked files when used during development
   # Add --ignore-missing-args to avoid the benign but noisy "file has vanished" errors
-  rsync -a --ignore-missing-args --exclude=".git" /nccl/ $nccl_build_workspace/
+  rsync -a --ignore-missing-args --exclude=".git" /nccl/ $workspace/
 fi
 
 # Setup ccache
@@ -74,13 +73,12 @@ if [[ "$ENABLE_CCACHE" -eq 1 && -x "$(command -v ccache)" ]]; then
   export PATH=$tempdir/bin:$PATH
   # Set ccache variables
   source docker/ccache-vars.sh
-  export CCACHE_BASEDIR=$nccl_build_workspace
+  export CCACHE_BASEDIR=$workspace
   export CCACHE_DIR=$tempdir/ccache
 fi
 
-export NCCL_HOME="$nccl_build_workspace/build"
-
-pushd $nccl_build_workspace
+export NCCL_HOME="$workspace/build"
+pushd $workspace
 
 # figure out a fair job number
 jobs=$(eval "$NUM_BUILD_PROCS")
@@ -102,10 +100,7 @@ let runtime=$((end - start))/1000000000
 echo "$(date +%T) : make took $runtime s"
 
 # Copy back built artifacts to host directory from container volume
-if [ "$CI_BUILD" -eq 1 ]; then
-  # Exclude .o files in CI as they are not used in subsequent jobs anyways
-  rsync -a --exclude="*.o" build /nccl/
-else
+if [ "$CI_BUILD" -eq 0 ]; then
   rsync -a build /nccl/
 fi
 

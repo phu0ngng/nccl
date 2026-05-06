@@ -333,6 +333,40 @@ variables:
     NCCL_HOME: build
     NCCL_DEBUG: "WARN"
 
+.build:
+  stage: build
+  timeout: 1 hour
+  artifacts:
+    paths:
+      - build
+    exclude:
+      - build/**/*.o
+    expire_in: 48 hrs
+
+.build-x86:
+  extends:
+    - .build
+  tags:
+    - ipp6-k8s
+  variables:
+    KUBE_NODE_SELECTOR: kubernetes.io/arch=amd64
+    KUBERNETES_CPU_REQUEST: 14
+    KUBERNETES_CPU_LIMIT: 32
+    KUBERNETES_MEMORY_REQUEST: 64Gi
+    KUBERNETES_MEMORY_LIMIT: 128Gi
+
+.build-arm:
+  extends:
+    - .build
+  tags:
+    - ipp6-k8s-arm
+  variables:
+    KUBE_NODE_SELECTOR: kubernetes.io/arch=arm64
+    KUBERNETES_CPU_REQUEST: 48
+    KUBERNETES_CPU_LIMIT: 96
+    KUBERNETES_MEMORY_REQUEST: 128Gi
+    KUBERNETES_MEMORY_LIMIT: 450Gi
+
 .setup:
   stage: setup
   variables:

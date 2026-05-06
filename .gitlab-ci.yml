@@ -11,7 +11,6 @@ stages:
   - comprehensive_sweep
   - profiler_tests
   - inspector_tests
-  - replay_tests
   - resiliency_tests
   - cleanup
   - summary
@@ -231,26 +230,10 @@ workflow:
 ## Stage: build - Start...
 ##
 
-# verify that setting TRACE=1 does not break compile
-# this is a special build-time setting to increase log verbosity
-build-trace:
-  stage: build
+build-x86-cu12:
   extends:
-    - .ipp6
-  rules:
-    - <<: *nightly_rule
-    - if: $BUILD_TRACE == "1"
-      when: always
-    - when: never
-  variables:
-    NCCL_BUILD_TRACE: 1
-  script:
-    - docker/make.sh ipp6-slurm
-
-build-ipp6:
-  stage: build
-  extends:
-    - .ipp6
+    - .build-x86
+  image: gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools:2.1.1-c12.8.0-u20.04
   rules:
     - <<: *weekly_rule
       variables:
@@ -261,164 +244,113 @@ build-ipp6:
     - <<: *pre_submit_nccl4py_rule
     - if: $RUN_ON_IPP6 == "1"
       when: always
-    - if: $RUN_ON_DRACO_OCI == "1" || $RUN_ON_EOS == "1" || $RUN_ON_CW_DFW == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_AWS == "1"
+    - if: $RUN_ON_AWS == "1"
       when: always
-    - if: $RUN_ON_P100 == "1" || $RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1"
+    - if: $RUN_ON_EOS == "1"
       when: always
-    - if: $RUN_DEEP_EP_CI == "1"
+    - if: $RUN_ON_DRACO_OCI == "1"
       when: always
-    - when: never
-  script:
-    - docker/make.sh --ci-build --use-build-cluster-image ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx,gc-classic
-  retry: 2
-  artifacts:
-    paths:
-      - build
-    exclude:
-      - build/**/*.o
-    expire_in: 48 hrs
-
-build-docs:
-  stage: build
-  extends:
-    - .ipp6
-  rules:
-    - <<: *post_submit_rule
-    - <<: *pre_submit_docs_rule
-    - if: $BUILD_DOCS == "1"
+    - if: $RUN_ON_PRE_NYX == "1"
       when: always
-    - when: never
-  variables:
-    NVIDIA_VISIBLE_DEVICES: void
-  script:
-    - source docker/clusters/ipp6-slurm-config.sh
-    - eval "$(get_docs_build_command $(realpath .) $(get_build_image_version))"
-  artifacts:
-    paths:
-      - build/pkg/doc/*.zip
-    expire_in: 48 hrs
-
-build-dgxspark:
-  stage: build
-  extends:
-    - .dgxspark
-  rules:
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-    - if: $RUN_ON_DGXSPARK == "1"
+    - if: $RUN_ON_CW_DFW == "1"
       when: always
-  variables:
-    INSTALL_DIR: $DGXSPARK_INSTALL_DIR
-    BUILD_DIR: build
-    CLUSTER_CONFIG: "docker/clusters/ipp6-dgxspark-config.sh"
-    NVCC_GENCODE: "-gencode=arch=compute_121,code=sm_121"
-  script:
-    - source $CLUSTER_CONFIG
-    - eval "$(get_build_command_bm)"
-  retry: 2
-  artifacts:
-    paths:
-      - build
-    exclude:
-      - build/**/*.o
-    expire_in: 48 hrs
-
-build-pre-tyche:
-  stage: build
-  extends:
-    - .pre-tyche
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(weekly)$/
-      when: always
-      variables:
-        NCCL_TEST_REDUCE_COPY_TYPES: "all"
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-    - <<: *pre_submit_nccl_ep_rule
-    - if: $RUN_ON_PRE_TYCHE == "1"
-      when: always
-    - if: $RUN_NCCL_EP_CI == "1"
-      when: always
-    - when: never
-  script:
-    - docker/make.sh pre-tyche
-    - mv build build-pre-tyche
-  artifacts:
-    paths:
-      - build-pre-tyche
-    exclude:
-      - build-pre-tyche/**/*.o
-    expire_in: 48 hrs
-
-build-theia:
-  stage: build
-  extends:
-    - .theia
-  rules:
-    - <<: *weekly_rule
-      variables:
-        NCCL_TEST_REDUCE_COPY_TYPES: "all"
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-    - if: $RUN_ON_THEIA == "1"
+    - if: $RUN_ON_P40 == "1" || $RUN_ON_P100 == "1" || $RUN_ON_GP100 == "1"
       when: always
     - if: $RUN_DEEP_EP_CI == "1"
       when: always
     - when: never
+  # By default, build default GPU arch set. Can be overridden by setting the GPU_ARCH_LIST variable.
+  # variables:
+  #   GPU_ARCH_LIST: "60,70,80,86,89,90,100,120"
   script:
-    - docker/make.sh theia --baremetal-build
-    - mv build build-theia
-  artifacts:
-    paths:
-      - build-theia
-    exclude:
-      - build-theia/**/*.o
-    expire_in: 48 hrs
+    - docker/make.sh --ci-build ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx,gc-classic
 
-build-bia:
-  stage: build
+build-x86-cu13:
   extends:
-    - .bia
+    - .build-x86
+  image: gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools:2.1.1-c13.0.2-u24.04
   rules:
-    - <<: *weekly_rule
-      variables:
-        NCCL_TEST_REDUCE_COPY_TYPES: "all"
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
     - if: $RUN_ON_BIA == "1"
       when: always
     - when: never
   script:
-    - docker/make.sh bia
-    - mv build build-bia
-  artifacts:
-    paths:
-      - build-bia
-    exclude:
-      - build-bia/**/*.o
-    expire_in: 48 hrs
+    - docker/make.sh --ci-build bia
 
-build-polyphe:
-  stage: build
+build-arm-cu13:
   extends:
-    - .polyphe
+    - .build-arm
+  image: gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools:2.1.1-c13.0.2-u24.04
   rules:
-    - <<: *weekly_rule
-      variables:
-        NCCL_TEST_REDUCE_COPY_TYPES: "all"
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
+    - if: $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - if: $RUN_ON_THEIA == "1"
+      when: always
+    - if: $RUN_ON_DGXSPARK == "1"
+      when: always
     - if: $RUN_ON_POLYPHE == "1"
+      when: always
+    - if: $RUN_DEEP_EP_CI == "1"
       when: always
     - when: never
   script:
-    - docker/make.sh polyphe
-    - mv build build-polyphe
+    - docker/make.sh --ci-build pre-tyche,theia,ipp6-dgxspark,polyphe
+
+build-cmake:
+  extends:
+    - .build-x86
+  image: gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools:2.1.1-c13.0.2-u24.04
+  rules:
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+    - if: $BUILD_CMAKE == "1"
+      when: always
+    - when: never
+  variables:
+    CUDA_HOME: /usr/local/cuda
+    GPU_ARCH_LIST: 80
+  script:
+    - export NCCL_HOME=$(pwd)
+    - cmake -DCMAKE_CUDA_ARCHITECTURES=$GPU_ARCH_LIST -DBUILD_TESTS=ON -B build/
+    - cmake --build build/ --parallel
+
+# verify that setting TRACE=1 does not break compile
+# this is a special build-time setting to increase log verbosity
+build-trace:
+  extends:
+    - .build-x86
+  image: gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools:2.1.1-c12.8.0-u20.04
+  rules:
+    - <<: *nightly_rule
+    - if: $BUILD_TRACE == "1"
+      when: always
+    - when: never
+  variables:
+    NCCL_BUILD_TRACE: 1
+  script:
+    - docker/make.sh --ci-build
+  artifacts: {}
+
+build-docs:
+  stage: build
+  image: gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools:2.1.1-c12.8.0-u20.04
+  timeout: 15 minutes
+  rules:
+    - <<: *post_submit_rule
+    - <<: *pre_submit_docs_rule
+    - if: $BUILD_DOCS == "1"
+      when: always
+    - when: never
+  tags:
+    - ipp6-k8s
+  script:
+    - bash docs/userguide/build_docs.sh
   artifacts:
     paths:
-      - build-polyphe
-    exclude:
-      - build-polyphe/**/*.o
+      - build/pkg/doc/*.zip
     expire_in: 48 hrs
 
 build-dlfw-pytorch-container:
@@ -442,29 +374,11 @@ build-dlfw-pytorch-container:
     expire_in: 48 hrs
   allow_failure: false
 
-build-cmake:
-  stage: build
-  extends:
-    - .ipp6
-  rules:
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-    - if: $BUILD_CMAKE == "1"
-      when: always
-    - when: never
-  variables:
-    SLURM_PARTITION: cpuonly
-    SLURM_TIME: 15
-  retry: 2
-  script:
-    # TODO (kartiki) - Invoke this via docker/make.sh
-    - srun --exclusive -p $SLURM_PARTITION -N 1 -t $SLURM_TIME docker/build_nccl_bm_cmake.sh --ci-build --enable-ccache
-  allow_failure: false
-
 build-windows:
   stage: build
   extends:
     - .windows
+  timeout: 1 hour
   rules:
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
@@ -499,8 +413,7 @@ setup-AWS-H100-EFA:
     - if: $RUN_ON_AWS == "1"
       when: always
     - when: never
-  needs:
-    - job: build-ipp6
+  needs: ["build-x86-cu12"]
   variables:
     SETUP_SCRIPT: setup.sh
     REPO_DIR: ${WORKSPACE_DIR}/repo
@@ -535,7 +448,7 @@ setup-pre-nyx:
     - if: $RUN_ON_PRE_NYX == "1"
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs: ["build-x86-cu12"]
   variables:
     BUILD_DIR: "build"
     INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
@@ -556,9 +469,9 @@ setup-pre-tyche:
     - if: $RUN_DEEP_EP_CI == "1"
       when: always
     - when: never
-  needs: ["build-pre-tyche"]
+  needs: ["build-arm-cu13"]
   variables:
-    BUILD_DIR: "build-pre-tyche"
+    BUILD_DIR: "build"
     INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
 
 setup-theia:
@@ -574,9 +487,9 @@ setup-theia:
     - if: $RUN_DEEP_EP_CI == "1"
       when: always
     - when: never
-  needs: ["build-theia"]
+  needs: ["build-arm-cu13"]
   variables:
-    BUILD_DIR: "build-theia"
+    BUILD_DIR: "build"
     INSTALL_DIR: "${THEIA_INSTALL_DIR}"
 
 setup-bia:
@@ -590,9 +503,9 @@ setup-bia:
     - if: $RUN_ON_BIA == "1"
       when: always
     - when: never
-  needs: ["build-bia"]
+  needs: ["build-x86-cu13"]
   variables:
-    BUILD_DIR: "build-bia"
+    BUILD_DIR: "build"
     INSTALL_DIR: "${BIA_INSTALL_DIR}"
 
 setup-polyphe:
@@ -606,9 +519,9 @@ setup-polyphe:
     - if: $RUN_ON_POLYPHE == "1"
       when: always
     - when: never
-  needs: ["build-polyphe"]
+  needs: ["build-arm-cu13"]
   variables:
-    BUILD_DIR: "build-polyphe"
+    BUILD_DIR: "build"
     INSTALL_DIR: "${POLYPHE_INSTALL_DIR}"
 
 setup-eos:
@@ -627,7 +540,7 @@ setup-eos:
     - if: $RUN_DEEP_EP_CI == "1"
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs: ["build-x86-cu12"]
   variables:
     BUILD_DIR: "build"
     INSTALL_DIR: "${EOS_INSTALL_DIR}"
@@ -644,7 +557,7 @@ setup-cw-dfw:
       when: always
     - <<: *weekly_rule
     - when: never
-  needs: ["build-ipp6"]
+  needs: ["build-x86-cu12"]
   variables:
     BUILD_DIR: "build"
     INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
@@ -659,7 +572,7 @@ setup-draco-oci:
     - if: $RUN_ON_DRACO_OCI == "1"
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs: ["build-x86-cu12"]
   variables:
     BUILD_DIR: "build"
     INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
@@ -683,7 +596,7 @@ setup-ipp6:
     - if: $RUN_NCCL4PY_CI == "1"
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs: ["build-x86-cu12"]
   variables:
     BUILD_DIR: "build"
     INSTALL_DIR: "${IPP6_INSTALL_DIR}"
@@ -701,7 +614,7 @@ setup-dgxspark:
     - if: $RUN_ON_DGXSPARK == "1"
       when: always
     - when: never
-  needs: ["build-dgxspark"]
+  needs: ["build-arm-cu13"]
   variables:
     BUILD_DIR: "build"
     INSTALL_DIR: "${DGXSPARK_INSTALL_DIR}"
@@ -861,7 +774,7 @@ unit-tests-P100:
     - if: $RUN_ON_P100 == "1" && $RUN_UNIT_TESTS == "1"
       when: always
     - when: never
-  needs: ["build-ipp6","health-P100"]
+  needs: ["build-x86-cu12", "health-P100"]
   variables:
     NCCL_DEBUG: "WARN"
     SLURM_TIME: 10
@@ -914,7 +827,7 @@ unit-tests-P40:
     - if: $RUN_ON_P40 == "1" && $RUN_UNIT_TESTS == "1"
       when: always
     - when: never
-  needs: ["build-ipp6","health-P40"]
+  needs: ["build-x86-cu12", "health-P40"]
   variables:
     NCCL_DEBUG: "WARN"
     SLURM_TIME: 10
@@ -966,7 +879,8 @@ unit-tests-GP100:
     - <<: *nightly_rule
     - if: $RUN_ON_GP100 == "1" && $RUN_UNIT_TESTS == "1"
       when: always
-  needs: ["build-ipp6","health-GP100"]
+    - when: never
+  needs: ["build-x86-cu12", "health-GP100"]
   variables:
     NCCL_DEBUG: "WARN"
     SLURM_TIME: 10
@@ -1903,7 +1817,8 @@ apitest-P100:
     - <<: *nightly_rule
     - if: $RUN_ON_P100 == "1" && $RUN_API_TESTS == "1"
       when: always
-  needs: ["build-ipp6", "health-P100"]
+    - when: never
+  needs: ["build-x86-cu12", "health-P100"]
   variables:
     SLURM_TIME: 10
     NNODES: 1
@@ -1933,7 +1848,7 @@ apitest-P40:
     - if: $RUN_ON_P40 == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
-  needs: ["build-ipp6", "health-P40"]
+  needs: ["build-x86-cu12", "health-P40"]
   variables:
     SLURM_TIME: 10
     NNODES: 1
@@ -1963,7 +1878,7 @@ apitest-GP100:
     - if: $RUN_ON_GP100 == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
-  needs: ["build-ipp6", "health-GP100"]
+  needs: ["build-x86-cu12", "health-GP100"]
   variables:
     SLURM_TIME: 10
     NNODES: 1
@@ -2553,7 +2468,7 @@ perftest-P100:
     - if: $RUN_ON_P100 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
-  needs: ["build-ipp6", "health-P100"]
+  needs: ["build-x86-cu12", "health-P100"]
   variables:
     NCCL_DEBUG: "WARN"
     SLURM_TIME: 10
@@ -2588,7 +2503,7 @@ perftest-P40:
     - if: $RUN_ON_P40 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
-  needs: ["build-ipp6", "health-P40"]
+  needs: ["build-x86-cu12", "health-P40"]
   variables:
     SLURM_TIME: 10
     MAX: "1G"
@@ -2622,7 +2537,7 @@ perftest-GP100:
     - if: $RUN_ON_GP100 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
-  needs: ["build-ipp6", "health-GP100"]
+  needs: ["build-x86-cu12", "health-GP100"]
   variables:
     SLURM_TIME: 10
     MAX: "1G"
@@ -2658,7 +2573,7 @@ nic-fusion-A40:
     # - if: $RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
     #   when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs: ["build-x86-cu12"]
   variables:
     MPI_HOME: "/home/nvshmem_shared/openmpi"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
@@ -4656,8 +4571,6 @@ cleanup-eos:
   tags:
     - nccl-eos
   needs:
-    - job: fairshare-eos
-      optional: true
     - job: setup-eos
       optional: true
     - job: nccl_ep_ci
@@ -4701,8 +4614,6 @@ cleanup-cw-dfw:
   tags:
     - nccl-cw-dfw
   needs:
-    - job: fairshare-cw-dfw
-      optional: true
     - job: setup-cw-dfw
       optional: true
     - job: unit-tests-cw-dfw
@@ -4737,8 +4648,6 @@ cleanup-draco-oci:
   tags:
     - draco-oci-iad
   needs:
-    - job: fairshare-draco-oci
-      optional: true
     - job: setup-draco-oci
       optional: true
     - job: unit-tests-draco_oci
@@ -4782,8 +4691,6 @@ cleanup-pre-nyx:
       optional: true
     - job: perftest-multi-pre-nyx
       optional: true
-    - job: reduce-copy-sweep-pre-nyx
-      optional: true
   variables:
     INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
 
@@ -4808,8 +4715,6 @@ cleanup-pre-tyche:
   tags:
     - ptyche
   needs:
-    - job: build-pre-tyche
-      optional: true
     - job: setup-pre-tyche
       optional: true
     - job: nccl_ep_ci
@@ -4859,8 +4764,6 @@ cleanup-theia:
   tags:
     - lyris
   needs:
-    - job: build-theia
-      optional: true
     - job: setup-theia
       optional: true
     - job: unit-tests-theia
@@ -4913,8 +4816,6 @@ cleanup-bia:
   tags:
     - bia
   needs:
-    - job: build-bia
-      optional: true
     - job: setup-bia
       optional: true
     - job: unit-tests-bia
@@ -4953,8 +4854,6 @@ cleanup-polyphe:
   tags:
     - polyphe
   needs:
-    - job: build-polyphe
-      optional: true
     - job: setup-polyphe
       optional: true
     - job: unit-tests-polyphe

@@ -72,11 +72,7 @@ for target_cluster_tag in $target_cluster_tags; do
         gpu_arch_list="$(get_gpu_archs),$gpu_arch_list"
     fi
 
-    # If --use-build-cluster-image is not set, then the build image is pulled from the target cluster(s)
-    # If there are multiple targets, the versions must be the exact same to ensure the artifacts are produced correctly for all
-    # If --use-build-cluster-image is set, then the build image is pulled from the build cluster, and the target cluster build images are ignored
-    # This should be used cautiously as it may result in artifacts being incompatible with the target clusters, but is useful if the build cluster has a newer image than the target clusters
-    if [ "$baremetal_build" -eq 0 ] && [ "$use_build_cluster_image" -eq 0 ]; then
+    if [ "$CI_BUILD" -eq 0 ] && [ "$baremetal_build" -eq 0 ] && [ "$use_build_cluster_image" -eq 0 ]; then
         if [ -z "$build_image_version" ]; then
             build_image_version="$(get_build_image_version)"
         else
@@ -89,6 +85,18 @@ for target_cluster_tag in $target_cluster_tags; do
 done
 
 export NVCC_GENCODE="$(get_nvcc_gencodes $gpu_arch_list)"
+
+# Run CI build if selected
+if [ "$CI_BUILD" -eq 1 ]; then
+    mkdir -p build
+    export NUM_BUILD_PROCS="nproc"
+    if [ -n "$GPU_ARCH_LIST" ]; then
+        export NVCC_GENCODE="$(get_nvcc_gencodes $GPU_ARCH_LIST)"
+    fi
+    echo "NVCC_GENCODE: $NVCC_GENCODE"
+    bash docker/build_nccl.sh --ci-build --enable-ccache
+    exit $?
+fi
 
 # reload the config with build cluster data
 if [[ "$target_cluster_arg" != "$build_cluster_tag" ]]; then
