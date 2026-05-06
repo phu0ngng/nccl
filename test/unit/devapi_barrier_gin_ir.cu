@@ -39,7 +39,7 @@ extern "C" __global__ void runDevice(ncclDevComm comm) {
 
   // Barrier rounds
   for (int round = 0; round < 10; ++round) {
-    ncclBarrierSessionSync(session, *coop, cuda::memory_order_relaxed, ncclGinFenceLevel::Relaxed);
+    ncclBarrierSessionSync(session, *coop, cuda::memory_order_relaxed, ncclGinFenceLevel::None);
     if (t == 0 && blockIdx.x == 0 && world.rank == (round % world.nRanks)) {
       printf("Round %d\n", round);
     }

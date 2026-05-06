@@ -67,7 +67,7 @@ One major customer use case is "batches" of gets. A user wants to submit batch 1
 
 Interaction with barrier:
 
-* Barrier with `ncclGinFenceLevel::Relaxed`: the completion of the barrier has no connection to the completion/visibility of previous calls to `get`
+* Barrier with `ncclGinFenceLevel::None`: the completion of the barrier has no connection to the completion/visibility of previous calls to `get`
 
 Interaction with flush:
 
