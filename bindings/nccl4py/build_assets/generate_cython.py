@@ -97,9 +97,9 @@ def prepare_cybind_assets(
     Raises:
         - ``FileNotFoundError``: If required files don't exist.
     """
-    # Copy config_nccl.py
-    config_src = nccl4py_assets_dir / "cybind" / "config_nccl.py"
-    config_dst = cybind_dir / "cybind" / "assets" / "configs" / "config_nccl.py"
+    # Copy nccl.cybind.yaml
+    config_src = nccl4py_assets_dir / "cybind" / "nccl.cybind.yaml"
+    config_dst = cybind_dir / "cybind" / "assets" / "configs" / "nccl.cybind.yaml"
 
     if not config_src.exists():
         raise FileNotFoundError(f"Config file not found: {config_src}")
