@@ -748,7 +748,8 @@ def test_nccl_dev_comm_requirements_struct_layout():
     #   int ginQueueDepth;                            // int32: offset 80, size 4
     #   int ginTrafficClass;                          // int32: offset 84, size 4
     #   int worldGinBarrierCount;                     // int32: offset 88, size 4
-    #   // [trailing padding 4 bytes for size_t (8-byte) alignment]
+    #   bool ginStrongSignalsRequired;                // uint8: offset 92, size 1
+    #   // [trailing padding 3 bytes for size_t (8-byte) alignment]
     # }
     expected_layout = [
         # field_name                     type        offset    size
@@ -775,7 +776,8 @@ def test_nccl_dev_comm_requirements_struct_layout():
         ('gin_queue_depth',              np.int32,   80,       4),
         ('gin_traffic_class',            np.int32,   84,       4),
         ('world_gin_barrier_count',      np.int32,   88,       4),
-        # 4 bytes trailing padding to round up to 8-byte alignment of size_t
+        ('gin_strong_signals_required',  np.uint8,   92,       1),
+        # 3 bytes trailing padding to round up to 8-byte alignment of size_t
     ]
     expected_total_size = 96
 
@@ -892,7 +894,8 @@ def test_nccl_dev_comm_struct_layout():
         ('gin_signal_shadows',         np.intp,                                          192,      8),
         ('gin_context_count',          np.uint32,                                        200,      4),
         ('gin_is_railed',              np.uint8,                                         204,      1),
-        # 3 bytes padding (offset 205-207)
+        ('gin_strong_legacy_signals',  np.uint8,                                         205,      1),
+        # 2 bytes padding (offset 206-207)
         ('abort_flag',                 np.intp,                                          208,      8),
         ('hybrid_lsa_barrier',         _nccl_bindings.lsa_barrier_handle_dtype,          216,      8),
         ('hybrid_rail_gin_barrier',    _nccl_bindings.gin_barrier_handle_dtype,          224,      8),
