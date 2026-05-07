@@ -119,6 +119,7 @@ void ncclDevCommRequirements_backwards_compat_test() {
   static_assert(offsetof(ncclDevCommRequirements_t, ginTrafficClass) == 84);
   static_assert(offsetof(ncclDevCommRequirements_t, worldGinBarrierCount) == 88);
   static_assert(offsetof(ncclDevCommRequirements_t, ginStrongSignalsRequired) == 92);
+  static_assert(offsetof(ncclDevCommRequirements_t, ginVaSignalsRequired) == 93);
 
   // This check prompts users to update the test. Edit according to the instructions above.
   static_assert(sizeof(ncclDevCommRequirements_t) == 96);
