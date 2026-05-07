@@ -90,7 +90,7 @@ fi
 
 if [ "$HIER_COLL" == "1" ] && [ "$NNODES" -gt "1" ];
 then
-  for func in all_gather_perf; do
+  for func in all_gather_perf alltoall_perf; do
     run_command "${func}_hier_coll_nvls_enable" $RUN_MODE $NGPUS "" "NCCL_MNNVL_ENABLE=0 NCCL_NET=IB NCCL_NVLS_ENABLE=1" "$NCCL_HOME/test/perf/$func" "-b 128 -e 1G -f 2 -G 0 -R 2 -x 2"
     run_command "${func}_hier_coll_graph_nvls_enable" $RUN_MODE $NGPUS "" "NCCL_MNNVL_ENABLE=0 NCCL_NET=IB NCCL_NVLS_ENABLE=1" "$NCCL_HOME/test/perf/$func" "-b 128 -e 1G -f 2 -G 1 -R 2 -x 2"
     run_command "${func}_hier_coll_nvls_disable" $RUN_MODE $NGPUS "" "NCCL_MNNVL_ENABLE=0 NCCL_NET=IB NCCL_NVLS_ENABLE=0" "$NCCL_HOME/test/perf/$func" "-b 128 -e 1G -f 2 -G 0 -R 2 -x 2"
