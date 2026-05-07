@@ -233,7 +233,7 @@ workflow:
 build-x86-cu12:
   extends:
     - .build-x86
-  image: gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools:2.1.1-c12.8.0-u20.04
+  image: gitlab-master.nvidia.com:5005/nccl/nccl-images/ci:2.30-c12.9.0
   rules:
     - <<: *weekly_rule
       variables:
@@ -263,12 +263,12 @@ build-x86-cu12:
   # variables:
   #   GPU_ARCH_LIST: "60,70,80,86,89,90,100,120"
   script:
-    - docker/make.sh --ci-build ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx,gc-classic
+    - docker/make.sh --ci-build
 
 build-x86-cu13:
   extends:
     - .build-x86
-  image: gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools:2.1.1-c13.0.2-u24.04
+  image: gitlab-master.nvidia.com:5005/nccl/nccl-images/ci:2.30-c13.2.0
   rules:
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
@@ -276,12 +276,12 @@ build-x86-cu13:
       when: always
     - when: never
   script:
-    - docker/make.sh --ci-build bia
+    - docker/make.sh --ci-build
 
 build-arm-cu13:
   extends:
     - .build-arm
-  image: gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools:2.1.1-c13.0.2-u24.04
+  image: gitlab-master.nvidia.com:5005/nccl/nccl-images/ci:2.30-c13.2.0
   rules:
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
@@ -297,12 +297,12 @@ build-arm-cu13:
       when: always
     - when: never
   script:
-    - docker/make.sh --ci-build pre-tyche,theia,ipp6-dgxspark,polyphe
+    - docker/make.sh --ci-build
 
 build-cmake:
   extends:
     - .build-x86
-  image: gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools:2.1.1-c13.0.2-u24.04
+  image: gitlab-master.nvidia.com:5005/nccl/nccl-images/ci:2.30-c13.2.0
   rules:
     - <<: *post_submit_rule
     - <<: *pre_submit_core_rule
@@ -322,7 +322,7 @@ build-cmake:
 build-trace:
   extends:
     - .build-x86
-  image: gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools:2.1.1-c12.8.0-u20.04
+  image: gitlab-master.nvidia.com:5005/nccl/nccl-images/ci:2.30-c12.9.0
   rules:
     - <<: *nightly_rule
     - if: $BUILD_TRACE == "1"
@@ -330,13 +330,14 @@ build-trace:
     - when: never
   variables:
     NCCL_BUILD_TRACE: 1
+    GPU_ARCH_LIST: 80
   script:
     - docker/make.sh --ci-build
   artifacts: {}
 
 build-docs:
   stage: build
-  image: gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools:2.1.1-c12.8.0-u20.04
+  image: gitlab-master.nvidia.com:5005/nccl/nccl-images/docs:2.30
   timeout: 15 minutes
   rules:
     - <<: *post_submit_rule

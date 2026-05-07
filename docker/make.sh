@@ -32,7 +32,7 @@ build_cluster_tag="$(identify_cluster)"
 
 # arg parsing
 # defaults
-target_cluster_arg="$build_cluster_tag"
+target_cluster_arg=""
 make_clean=0
 baremetal_build=0
 ci_build=0
@@ -58,6 +58,10 @@ done
 
 export CI_BUILD=$ci_build
 
+if [ "$CI_BUILD" -eq 0 ]; then
+    # Default to current cluster if not running in CI
+    target_cluster_arg="$build_cluster_tag"
+fi
 # process target cluster config
 # comma separated list of cluster tags
 target_cluster_tags="$(echo $target_cluster_arg | tr ',' ' ')"
@@ -93,7 +97,10 @@ if [ "$CI_BUILD" -eq 1 ]; then
     if [ -n "$GPU_ARCH_LIST" ]; then
         export NVCC_GENCODE="$(get_nvcc_gencodes $GPU_ARCH_LIST)"
     fi
-    echo "NVCC_GENCODE: $NVCC_GENCODE"
+    if [ -z "$NVCC_GENCODE" ]; then
+        unset NVCC_GENCODE
+        echo "NVCC_GENCODE is not set, using default gencodes from common.mk"
+    fi
     bash docker/build_nccl.sh --ci-build --enable-ccache
     exit $?
 fi
