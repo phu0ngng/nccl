@@ -194,10 +194,16 @@ def test_nccredop_parity():
 
 
 def test_nccl_commmemstat_parity():
-    assert int(t.NcclCommMemStat.GpuMemSuspend)   == int(b.CommMemStat.GpuMemSuspend)
-    assert int(t.NcclCommMemStat.GpuMemSuspended) == int(b.CommMemStat.GpuMemSuspended)
-    assert int(t.NcclCommMemStat.GpuMemPersist)   == int(b.CommMemStat.GpuMemPersist)
-    assert int(t.NcclCommMemStat.GpuMemTotal)     == int(b.CommMemStat.GpuMemTotal)
+    # Canonical SCREAMING_SNAKE_CASE members match the Cython binding values.
+    assert int(t.NcclCommMemStat.GPU_MEM_SUSPEND)   == int(b.CommMemStat.GpuMemSuspend)
+    assert int(t.NcclCommMemStat.GPU_MEM_SUSPENDED) == int(b.CommMemStat.GpuMemSuspended)
+    assert int(t.NcclCommMemStat.GPU_MEM_PERSIST)   == int(b.CommMemStat.GpuMemPersist)
+    assert int(t.NcclCommMemStat.GPU_MEM_TOTAL)     == int(b.CommMemStat.GpuMemTotal)
+    # Backward-compat camelCase aliases resolve to the canonical singletons.
+    assert t.NcclCommMemStat.GpuMemSuspend   is t.NcclCommMemStat.GPU_MEM_SUSPEND
+    assert t.NcclCommMemStat.GpuMemSuspended is t.NcclCommMemStat.GPU_MEM_SUSPENDED
+    assert t.NcclCommMemStat.GpuMemPersist   is t.NcclCommMemStat.GPU_MEM_PERSIST
+    assert t.NcclCommMemStat.GpuMemTotal     is t.NcclCommMemStat.GPU_MEM_TOTAL
 
 
 def test_nccl_gintype_parity():
