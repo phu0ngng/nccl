@@ -20,6 +20,32 @@ $snippet_auto_lowpp_imports_pyx
 # POD
 ###############################################################################
 
+cdef class PointerBox:
+    """Stable storage for NCCL APIs that fill pointer outputs asynchronously."""
+
+    def __init__(self, intptr_t ptr=0):
+        self.ptr = ptr
+
+    def __int__(self):
+        return self.ptr
+
+    def __index__(self):
+        return self.ptr
+
+    def __bool__(self):
+        return self.ptr != 0
+
+    @property
+    def address(self):
+        return <intptr_t>&self.ptr
+
+    def __repr__(self):
+        return f"<PointerBox ptr={self.ptr:#x}>"
+
+    def __format__(self, format_spec):
+        return format(self.ptr, format_spec)
+
+
 $pod_defs
 
 

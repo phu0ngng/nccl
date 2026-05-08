@@ -17,6 +17,9 @@ $type_decls
 
 ctypedef cudaStream_t Stream
 
+cdef class PointerBox:
+    cdef public intptr_t ptr
+
 
 ###############################################################################
 # Enum

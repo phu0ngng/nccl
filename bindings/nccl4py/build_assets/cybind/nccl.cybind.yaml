@@ -50,16 +50,18 @@ nccl:
         commId:
         - BYTES
         - null
-      return: comm
-      except?: 0
+      return: TRANSPARENT
+      validator: check_status
+      except?: -1
     ncclCommInitRank:
       # make commId bytes as it is passed by value...
       pyargs:
         commId:
         - BYTES
         - null
-      return: comm
-      except?: 0
+      return: TRANSPARENT
+      validator: check_status
+      except?: -1
     ncclCommInitAll:
       pyargs:
         devlist: SEQ
@@ -80,16 +82,19 @@ nccl:
 
     # Split / shrink / grow
     ncclCommSplit:
-      return: newcomm
-      except?: 0
+      return: TRANSPARENT
+      validator: check_status
+      except?: -1
     ncclCommShrink:
       pyargs:
         excludeRanksList: SEQ
-      return: newcomm
-      except?: 0
+      return: TRANSPARENT
+      validator: check_status
+      except?: -1
     ncclCommGrow:
-      return: newcomm
-      except?: 0
+      return: TRANSPARENT
+      validator: check_status
+      except?: -1
 
     # Extended init
     ncclCommInitRankScalable:
@@ -98,8 +103,9 @@ nccl:
         commIds:
         - BYTES
         - null
-      return: newcomm
-      except?: 0
+      return: TRANSPARENT
+      validator: check_status
+      except?: -1
 
     # Strings / errors
     ncclGetErrorString:
@@ -131,7 +137,9 @@ nccl:
 
     # Windows
     ncclCommWindowRegister:
-      return: win
+      return: TRANSPARENT
+      validator: check_status
+      except?: -1
     ncclCommWindowDeregister: {}
     # except? is required for C-scalar returns (intptr_t) so Cython
     # can propagate exceptions from check_status(). 0 is fine even

@@ -7,6 +7,8 @@ Tests cover:
 - NcclBufferSpec handling in register_buffer/register_window
 - Argument validation and error cases
 """
+import ctypes
+
 import numpy as np
 import pytest
 
@@ -16,6 +18,11 @@ from nccl.core.constants import WindowFlag
 from nccl.core.utils import UniqueId
 from .mock import CAIBuf, DLPackBuf, View, FakeDevice
 from nccl.core.typing import NcclInvalid
+from nccl.bindings import Result
+
+
+def _write_pointer(address, value):
+    ctypes.c_void_p.from_address(address).value = value or None
 
 
 # --- initialize() Tests ---
@@ -33,8 +40,9 @@ def test_initialize_resets_cached_properties(monkeypatch):
     """initialize() clears cached nranks/rank/device/properties."""
     class B:
         @staticmethod
-        def comm_init_rank_scalable(nranks, rank, n_id, comm_ids, config):
-            return 0xABC
+        def comm_init_rank_scalable(out, nranks, rank, n_id, comm_ids, config):
+            _write_pointer(out, 0xABC)
+            return 0
 
         unique_id_dtype = np.dtype([("internal", np.uint8, 128)])
 
@@ -82,9 +90,10 @@ def test_grow_new_rank(monkeypatch):
 
     class B:
         @staticmethod
-        def comm_grow(comm_ptr, nranks, uid_ptr, rank, config):
+        def comm_grow(comm_ptr, nranks, uid_ptr, rank, out, config):
             calls["grow"] = (comm_ptr, nranks, uid_ptr, rank, config)
-            return 0xFED
+            _write_pointer(out, 0xFED)
+            return 0
 
     monkeypatch.setattr("nccl.core.communicator._nccl_bindings", B)
 
@@ -102,19 +111,14 @@ def test_grow_existing_non_root(monkeypatch):
 
     class B:
         @staticmethod
-        def comm_grow(comm_ptr, nranks, uid_ptr, rank, config):
+        def comm_grow(comm_ptr, nranks, uid_ptr, rank, out, config):
             calls["grow"] = (comm_ptr, nranks, uid_ptr, rank, config)
-            return 0xABC
+            _write_pointer(out, 0xABC)
+            return 0
 
     monkeypatch.setattr("nccl.core.communicator._nccl_bindings", B)
 
-    comm = Communicator.__new__(Communicator)
-    comm._comm = 0xC
-    comm._resources = []
-    comm._nranks = None
-    comm._device = None
-    comm._rank = None
-    comm._comm_properties = None
+    comm = Communicator(0xC)
 
     # rank=None (default) should be converted to -1 for the C API
     new_comm = comm.grow(nranks=4)
@@ -127,21 +131,16 @@ def test_grow_existing_root(monkeypatch):
 
     class B:
         @staticmethod
-        def comm_grow(comm_ptr, nranks, uid_ptr, rank, config):
+        def comm_grow(comm_ptr, nranks, uid_ptr, rank, out, config):
             calls["grow"] = (comm_ptr, nranks, uid_ptr, rank, config)
-            return 0xABC
+            _write_pointer(out, 0xABC)
+            return 0
 
     monkeypatch.setattr("nccl.core.communicator._nccl_bindings", B)
 
     uid = UniqueId()
 
-    comm = Communicator.__new__(Communicator)
-    comm._comm = 0xC
-    comm._resources = []
-    comm._nranks = None
-    comm._device = None
-    comm._rank = None
-    comm._comm_properties = None
+    comm = Communicator(0xC)
 
     # rank=None (default) should be converted to -1 for the C API
     new_comm = comm.grow(nranks=4, unique_id=uid)
@@ -165,9 +164,7 @@ def _setup_comm_with_mocked_bindings(monkeypatch, calls):
     monkeypatch.setattr("nccl.core.communicator._nccl_bindings", B)
     monkeypatch.setattr("nccl.core.resources._nccl_bindings", B)
 
-    comm = Communicator.__new__(Communicator)
-    comm._comm = 0xC
-    comm._resources = []
+    comm = Communicator(0xC)
     return comm, B
 
 
@@ -312,12 +309,12 @@ def test_register_buffer_accepts_ncclbufferspec(monkeypatch):
         )
     )
 
-    comm = Communicator.__new__(Communicator)
-    comm._comm = 0xC
+    comm = Communicator(0xC)
     comm._device = FakeDevice(0)  # Mock device
     comm._rank = 0
     comm._nranks = 2
-    comm._resources = []
+    comm.get_async_error = lambda: Result.Success
+
 
     # Size derived from buffer (10 elements * 4 bytes = 40 bytes)
     handle = comm.register_buffer(CAIBuf())
@@ -330,9 +327,10 @@ def test_register_window_accepts_ncclbufferspec_and_flags(monkeypatch):
 
     class B:
         @staticmethod
-        def comm_window_register(comm_ptr, buf_ptr, size, flags):
+        def comm_window_register(comm_ptr, buf_ptr, size, out, flags):
             calls["reg"] = (comm_ptr, buf_ptr, size, flags)
-            return 0xBB
+            _write_pointer(out, 0xBB)
+            return 0
         @staticmethod
         def comm_window_deregister(comm_ptr, handle):
             pass
@@ -348,12 +346,11 @@ def test_register_window_accepts_ncclbufferspec_and_flags(monkeypatch):
         )
     )
 
-    comm = Communicator.__new__(Communicator)
-    comm._comm = 0xC
+    comm = Communicator(0xC)
     comm._device = FakeDevice(0)  # Mock device
     comm._rank = 0
     comm._nranks = 2
-    comm._resources = []
+    comm.get_async_error = lambda : Result.Success
 
     # Auto-detect size, default flags
     win = comm.register_window(CAIBuf())
@@ -365,16 +362,20 @@ def test_register_window_accepts_ncclbufferspec_and_flags(monkeypatch):
     assert calls["reg"] == (0xC, 0x2000, 40, int(WindowFlag.CollSymmetric))
 
 
-def test_register_window_returns_none_on_null_handle(monkeypatch):
-    """register_window returns None and skips resource tracking on NULL handle."""
+def test_register_window_on_null_handle(monkeypatch):
+    """register_window returns None and skips resource tracking on NULL handle
+    for blocking comms, but does retain null handle for non-blocking comms."""
+    calls = {"reg": [], "dereg": []}
 
     class B:
         @staticmethod
-        def comm_window_register(comm_ptr, buf_ptr, size, flags):
-            return 0  # NULL handle
+        def comm_window_register(comm_ptr, buf_ptr, size, handle, flags):
+            calls["reg"].append((comm_ptr, buf_ptr, size, flags))
+            return 0
         @staticmethod
-        def comm_window_deregister(comm_ptr, handle):
-            pass
+        def comm_window_deregister(comm_ptr, ptr):
+            calls["dereg"].append((comm_ptr, ptr))
+
 
     monkeypatch.setattr("nccl.core.communicator._nccl_bindings", B)
     monkeypatch.setattr("nccl.core.resources._nccl_bindings", B)
@@ -387,27 +388,40 @@ def test_register_window_returns_none_on_null_handle(monkeypatch):
         )
     )
 
-    comm = Communicator.__new__(Communicator)
-    comm._comm = 0xC
+    # blocking communicator test: win should be None
+    comm = Communicator(0xC)
+    comm.get_async_error = lambda: Result.Success
     comm._device = FakeDevice(0)
     comm._rank = 0
     comm._nranks = 2
-    comm._resources = []
 
     win = comm.register_window(CAIBuf())
     assert win is None
     assert comm._resources == []
 
+    # non-blocking communicator test: win should not yet be valid
+    comm = Communicator(0xC2)
+    comm.get_async_error = lambda: Result.InProgress # non-blocking
+    comm._device = FakeDevice(0)
+    comm._rank = 0
+    comm._nranks = 2
+
+    win = comm.register_window(CAIBuf())
+    assert win
+    assert win._handle.ptr == 0
+    assert not win.is_valid
+    win._handle.ptr = 0xBB
+    win.close()
+    assert calls["dereg"] == [(0xC2, 0xBB)]
+
 
 def test_buffer_device_validation(monkeypatch):
     """Test that buffers on wrong device raise NcclInvalid."""
     # Create communicator on device 0
-    comm = Communicator.__new__(Communicator)
-    comm._comm = 0xC
+    comm = Communicator(0xC)
     comm._device = FakeDevice(0)  # Communicator on device 0
     comm._rank = 0
     comm._nranks = 2
-    comm._resources = []
 
     # Mock _resolve_buffer to return buffer on device 1 (wrong device)
     monkeypatch.setattr(

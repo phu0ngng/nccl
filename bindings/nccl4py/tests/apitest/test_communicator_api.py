@@ -748,7 +748,7 @@ def test_register_window_user_ptr(nccl_comm):
         pytest.skip("Window registration not supported")
 
     # C-level query via the bindings
-    c_ptr = nccl_bindings.win_get_user_ptr(nccl_comm._comm, win._handle)
+    c_ptr = nccl_bindings.win_get_user_ptr(nccl_comm._comm, win.handle)
 
     assert win.user_ptr == c_ptr
     assert win.user_ptr == buf.data.ptr

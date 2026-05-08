@@ -1,9 +1,15 @@
+import ctypes
+
 import pytest
 
 from nccl.core.resources import RegisteredBufferHandle, RegisteredWindowHandle, CustomRedOp
 from nccl.core.constants import WindowFlag
 from nccl.core.typing import FLOAT32
-from nccl.bindings import ScalarResidence
+from nccl.bindings import Result, ScalarResidence
+
+
+def _write_pointer(address, value):
+    ctypes.c_void_p.from_address(address).value = value or None
 
 
 def test_registered_buffer_handle_register_and_close(monkeypatch):
@@ -33,12 +39,13 @@ def test_registered_window_handle_flags_and_close(monkeypatch):
     calls = {"reg": [], "dereg": []}
     class B:
         @staticmethod
-        def comm_window_register(comm_ptr, buf_ptr, size, flags):
+        def comm_window_register(comm_ptr, buf_ptr, size, handle, flags):
             calls["reg"].append((comm_ptr, buf_ptr, size, flags))
-            return 0xBB
+            _write_pointer(handle, 0xBB)
+            return 0
         @staticmethod
-        def comm_window_deregister(comm_ptr, handle):
-            calls["dereg"].append((comm_ptr, handle))
+        def comm_window_deregister(comm_ptr, ptr):
+            calls["dereg"].append((comm_ptr, ptr))
     monkeypatch.setattr("nccl.core.resources._nccl_bindings", B)
 
     w = RegisteredWindowHandle(0xC, 0xB, 32, WindowFlag.CollSymmetric)
@@ -46,6 +53,30 @@ def test_registered_window_handle_flags_and_close(monkeypatch):
     w.close(); w.close()
     assert calls["reg"] == [(0xC, 0xB, 32, int(WindowFlag.CollSymmetric))]
     assert calls["dereg"] == [(0xC, 0xBB)]
+
+
+def test_registered_window_handle_skips_deregister_for_null_handle(monkeypatch):
+    calls = {"reg": [], "dereg": []}
+
+    class B:
+        @staticmethod
+        def comm_window_register(comm_ptr, buf_ptr, size, out, flags):
+            calls["reg"].append((comm_ptr, buf_ptr, size, flags))
+            _write_pointer(out, 0)
+            return int(Result.InProgress)
+
+        @staticmethod
+        def comm_window_deregister(comm_ptr, handle):
+            calls["dereg"].append((comm_ptr, handle))
+
+    monkeypatch.setattr("nccl.core.resources._nccl_bindings", B)
+
+    w = RegisteredWindowHandle(0xC, 0xB, 32, WindowFlag.CollSymmetric)
+    assert w.handle == 0
+    w.close()
+    w.close()
+    assert calls["reg"] == [(0xC, 0xB, 32, int(WindowFlag.CollSymmetric))]
+    assert calls["dereg"] == []
 
 
 def test_custom_redop_lifecycle(monkeypatch):
@@ -69,6 +100,4 @@ def test_custom_redop_lifecycle(monkeypatch):
     assert calls["destroy"] == [(0xDD, 0xC)]
     with pytest.raises(RuntimeError):
         _ = r.op
-
-
 
