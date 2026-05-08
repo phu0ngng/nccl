@@ -14,7 +14,12 @@ import re
 from cuda.pathfinder import DynamicLibNotFoundError, load_nvidia_dynamic_lib
 
 _SUPPORTED_CUDA_MAJOR = "13"
-_CUDA_COMPILER_RELEASE_RE = re.compile(rb"Cuda compilation tools, release ([0-9]+)\.")
+# Match NCCL's own version banner (e.g. "NCCL version 2.30.4 compiled with
+# CUDA 13.0"). Embedded by src/init.cc and survives `strip`, unlike nvcc's
+# "Cuda compilation tools, release N.N" identification string.
+_NCCL_CUDA_VERSION_RE = re.compile(
+    rb"NCCL version \S+ compiled with CUDA ([0-9]+)\."
+)
 
 
 def _cuda_major_from_nccl_library(path: str) -> str:
@@ -28,7 +33,7 @@ def _cuda_major_from_nccl_library(path: str) -> str:
                     break
 
                 data = tail + chunk
-                for match in _CUDA_COMPILER_RELEASE_RE.finditer(data):
+                for match in _NCCL_CUDA_VERSION_RE.finditer(data):
                     majors.add(match.group(1).decode("ascii"))
                 tail = data[-128:]
     except OSError as e:
