@@ -190,10 +190,10 @@ class NCCLLibrary:
     exported_functions = [
         Function("ncclEpCreateGroup", ncclResult_t, [
             ctypes.POINTER(ncclEpGroup_t), ncclComm_t,
-            ctypes.POINTER(ncclEpGroupConfig_t), cudaStream_t,
+            ctypes.POINTER(ncclEpGroupConfig_t),
             ncclEpAllocFn_t, ncclEpFreeFn_t
         ]),
-        Function("ncclEpGroupDestroy", ncclResult_t, [ncclEpGroup_t, cudaStream_t]),
+        Function("ncclEpGroupDestroy", ncclResult_t, [ncclEpGroup_t]),
         Function("ncclEpCreateHandle", ncclResult_t, [
             ctypes.POINTER(ncclEpHandle_t), ncclEpGroup_t,
             ncclNDTensor_t,  # topk_idx (opaque handle)
@@ -233,12 +233,11 @@ class NCCLLibrary:
             ncclEpHandle_t, ctypes.c_void_p, cudaStream_t
         ]),
         Function("ncclEpTensorCreate", ncclResult_t, [
-            ncclEpGroup_t,
             ctypes.POINTER(ncclNDTensor_t),  # OUT tensor handle
             ctypes.c_uint,  # ndim
             ctypes.c_int,   # datatype
             ctypes.c_int,   # tag
-            ctypes.c_void_p,  # data (nullptr = library allocates)
+            ctypes.c_void_p,  # data (caller-owned device pointer; must be non-null)
             ctypes.c_uint,  # size0
             ctypes.c_uint,  # size1
             ctypes.c_uint,  # size2
@@ -246,7 +245,6 @@ class NCCLLibrary:
             ctypes.c_uint,  # size4
         ]),
         Function("ncclEpTensorDestroy", ncclResult_t, [
-            ncclEpGroup_t,
             ncclNDTensor_t,  # tensor handle
         ]),
         Function("ncclEpTensorGetData", ncclResult_t, [
@@ -271,13 +269,12 @@ class NCCLLibrary:
         if result != 0:
             raise RuntimeError(f"NCCL error: {nccl.get_error_string(result)}")
 
-    def ncclEpCreateGroup(self, comm, config, stream, alloc_fn=None, free_fn=None):
+    def ncclEpCreateGroup(self, comm, config, alloc_fn=None, free_fn=None):
         """Create NCCL EP group for distributed EP operations.
 
         Args:
             comm: NCCL communicator
             config: EP group configuration (ncclEpGroupConfig_t)
-            stream: CUDA stream
             alloc_fn: Optional custom allocator callback (ncclEpAllocFn_t).
                      If None, uses cudaMalloc/cudaFree.
             free_fn: Optional custom free callback (ncclEpFreeFn_t).
@@ -293,13 +290,13 @@ class NCCLLibrary:
         free_callback = free_fn if free_fn is not None else ctypes.cast(None, ncclEpFreeFn_t)
 
         self.NCCL_CHECK(self._funcs["ncclEpCreateGroup"](
-            ctypes.byref(ep_group), comm.ptr, ctypes.byref(config), stream,
+            ctypes.byref(ep_group), comm.ptr, ctypes.byref(config),
             alloc_callback, free_callback
         ))
         return ep_group
 
-    def ncclEpGroupDestroy(self, ep_group, stream):
-        self.NCCL_CHECK(self._funcs["ncclEpGroupDestroy"](ep_group, stream))
+    def ncclEpGroupDestroy(self, ep_group):
+        self.NCCL_CHECK(self._funcs["ncclEpGroupDestroy"](ep_group))
 
     def ncclEpCreateHandle(self, ep_group, topk_tensor, config, stream, local_tensors=None, use_fp8=False):
         """Create EP handle for a specific dispatch/combine operation.

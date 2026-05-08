@@ -3,53 +3,24 @@
 #include <cassert>
 
 ////////////////////////////////////////////////////////////////////////////////
-// Cooperation level enum and helper
+// VA signal dispatch helpers
 ////////////////////////////////////////////////////////////////////////////////
 
-enum class CoopLevel {
-  Thread = 0,
-  Cta = 2,
-  Warp = 1
-};
-
-inline int getNumThreadsForOneCoop(CoopLevel level) {
-  switch (level) {
-    case CoopLevel::Thread:
-      return 1;
-    case CoopLevel::Warp:
-      return 32;
-    case CoopLevel::Cta:
-      return 64;
-  }
-  return 1; // Default
-}
-
-__device__ inline ncclCoopAny getCoopFromLevel(CoopLevel level) {
-  if (level == CoopLevel::Thread) {
-    return ncclCoopThread();
-  } else if (level == CoopLevel::Warp) {
-    return ncclCoopWarp();
-  } else {
-    return ncclCoopCta();
+template <typename Coop>
+__device__ void ginVaSignalInc(ncclGin& gin, Coop coop, int destRank, ncclWindow_t window, size_t offset, GinSignalType signalType) {
+  switch (signalType) {
+    case GinSignalType::Strong: gin.signal(coop, destRank, ncclGin_StrongVASignalInc{window, offset}); break;
+    case GinSignalType::Weak:   gin.signal(coop, destRank, ncclGin_WeakVASignalInc{window, offset});   break;
+    case GinSignalType::Legacy: gin.signal(coop, destRank, ncclGin_VASignalInc{window, offset});       break;
   }
 }
 
-// This function only exists due to https://nvbugspro.nvidia.com/bug/5870672.
-// There is a suspected compiler bug when you call waitSignal using a coop variable that has type ncclCoopAny.
-// This function avoids the bug by switching based on the coop level.
-__device__ inline void waitSignal(ncclGin gin, CoopLevel level, ncclWindow_t window, size_t offset) {
-  switch (level) {
-    case CoopLevel::Thread:
-      gin.waitSignal(ncclCoopThread(), window, offset, 1);
-      break;
-    case CoopLevel::Warp:
-      gin.waitSignal(ncclCoopWarp(), window, offset, ncclCoopWarp().size());
-      break;
-    case CoopLevel::Cta:
-      gin.waitSignal(ncclCoopCta(), window, offset, ncclCoopCta().size());
-      break;
-    default:
-      break;
+template <typename Coop>
+__device__ void ginVaSignalAdd(ncclGin& gin, Coop coop, int destRank, ncclWindow_t window, size_t offset, uint64_t value, GinSignalType signalType) {
+  switch (signalType) {
+    case GinSignalType::Strong: gin.signal(coop, destRank, ncclGin_StrongVASignalAdd{window, offset, value}); break;
+    case GinSignalType::Weak:   gin.signal(coop, destRank, ncclGin_WeakVASignalAdd{window, offset, value});   break;
+    case GinSignalType::Legacy: gin.signal(coop, destRank, ncclGin_VASignalAdd{window, offset, value});       break;
   }
 }
 
@@ -58,7 +29,7 @@ __device__ inline void waitSignal(ncclGin gin, CoopLevel level, ncclWindow_t win
 ////////////////////////////////////////////////////////////////////////////////
 
 __global__ void signalVaRingKernel(ncclDevComm comm, int contextIdx,
-                                    ncclWindow_t window, size_t offset, CoopLevel coopLevel) {
+                                    ncclWindow_t window, size_t offset, CoopLevel coopLevel, GinSignalType signalType) {
 #if __CUDA_ARCH__ >= 700
   ncclTeam world = ncclTeamWorld(comm);
   ncclGin gin(comm, contextIdx);
@@ -67,8 +38,7 @@ __global__ void signalVaRingKernel(ncclDevComm comm, int contextIdx,
 
   int nextRank = (world.rank + 1) % world.nRanks;
 
-  // Signal the next rank
-  gin.signal(world, nextRank, ncclGin_VASignalInc{window, offset});
+  ginVaSignalInc(gin, world, nextRank, window, offset, signalType);
 
   // Wait for signal from previous rank
   waitSignal(gin, coopLevel, window, offset);
@@ -78,15 +48,14 @@ __global__ void signalVaRingKernel(ncclDevComm comm, int contextIdx,
 }
 
 __global__ void signalVaResetKernel(ncclDevComm comm, int contextIdx,
-                                     ncclWindow_t window, size_t offset, CoopLevel coopLevel) {
+                                     ncclWindow_t window, size_t offset, CoopLevel coopLevel, GinSignalType signalType) {
 #if __CUDA_ARCH__ >= 700
   ncclTeam world = ncclTeamWorld(comm);
   ncclGin gin(comm, contextIdx);
   ncclCoopAny coop = getCoopFromLevel(coopLevel);
   KERNEL_ASSERT_EQ(coop.size(), ncclCoopCta().size(), "This test assumes exactly one coop is launched");
 
-
-  gin.signal(world, (world.rank + 1) % world.nRanks, ncclGin_VASignalInc{window, offset});
+  ginVaSignalInc(gin, world, (world.rank + 1) % world.nRanks, window, offset, signalType);
 
   // Wait for signal from previous rank
   waitSignal(gin, coopLevel, window, offset);
@@ -100,7 +69,7 @@ __global__ void signalVaResetKernel(ncclDevComm comm, int contextIdx,
 }
 
 __global__ void signalVaBasicKernel(ncclDevComm comm, int contextIdx, bool isAdd,
-                                     ncclWindow_t window, size_t offset, CoopLevel coopLevel) {
+                                     ncclWindow_t window, size_t offset, CoopLevel coopLevel, GinSignalType signalType) {
 #if __CUDA_ARCH__ >= 700
   ncclTeam world = ncclTeamWorld(comm);
   ncclGin gin(comm, contextIdx);
@@ -113,9 +82,9 @@ __global__ void signalVaBasicKernel(ncclDevComm comm, int contextIdx, bool isAdd
 
   if (world.rank == 0) {
     if (isAdd) {
-      gin.signal(world, 1, ncclGin_VASignalAdd{window, offset, 1});
+      ginVaSignalAdd(gin, world, 1, window, offset, 1, signalType);
     } else {
-      gin.signal(world, 1, ncclGin_VASignalInc{window, offset});
+      ginVaSignalInc(gin, world, 1, window, offset, signalType);
     }
   }
 
@@ -131,7 +100,7 @@ __global__ void signalVaBasicKernel(ncclDevComm comm, int contextIdx, bool isAdd
     KERNEL_ASSERT_EQ(coop.size(), *signalPtr, "Signal should be coop.size() after wait signal");
   }
 #endif
-  }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Test parameters
@@ -141,13 +110,18 @@ struct GinVaSignalParams {
   int contextIdx;
   size_t offset;
   CoopLevel coop;
+  GinSignalType signalType;
 
   std::string toString() const {
     std::string coopStr = (coop == CoopLevel::Thread ? "thread" :
                            coop == CoopLevel::Warp ? "warp" : "cta");
+    const char* typeName = (signalType == GinSignalType::Strong) ? "strong"
+                         : (signalType == GinSignalType::Weak)   ? "weak"
+                                                                  : "legacy";
     return std::string("context_") + std::to_string(contextIdx) +
            "_offset_" + std::to_string(offset) +
-           "_coop_" + coopStr;
+           "_coop_" + coopStr +
+           "_" + typeName;
   }
 };
 
@@ -197,7 +171,7 @@ TEST_P(GinVaSignal_test, ring) {
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     signalVaRingKernel<<<1, numThreads, 0, streams[i]>>>(
-      devComms[i], params.contextIdx, windows[i], params.offset, params.coop);
+      devComms[i], params.contextIdx, windows[i], params.offset, params.coop, params.signalType);
   }
   syncAllDevices();
   cudaError_t err = cudaGetLastError();
@@ -215,7 +189,7 @@ TEST_P(GinVaSignal_test, reset) {
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     signalVaResetKernel<<<1, numThreads, 0, streams[i]>>>(
-      devComms[i], params.contextIdx, windows[i], params.offset, params.coop);
+      devComms[i], params.contextIdx, windows[i], params.offset, params.coop, params.signalType);
   }
   syncAllDevices();
   cudaError_t err = cudaGetLastError();
@@ -233,7 +207,7 @@ TEST_P(GinVaSignal_test, basic_add) {
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     signalVaBasicKernel<<<1, numThreads, 0, streams[i]>>>(
-      devComms[i], params.contextIdx, true, windows[i], params.offset, params.coop);
+      devComms[i], params.contextIdx, true, windows[i], params.offset, params.coop, params.signalType);
   }
   syncAllDevices();
   cudaError_t err = cudaGetLastError();
@@ -251,7 +225,7 @@ TEST_P(GinVaSignal_test, basic_inc) {
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     signalVaBasicKernel<<<1, numThreads, 0, streams[i]>>>(
-      devComms[i], params.contextIdx, false, windows[i], params.offset, params.coop);
+      devComms[i], params.contextIdx, false, windows[i], params.offset, params.coop, params.signalType);
   }
   syncAllDevices();
   cudaError_t err = cudaGetLastError();
@@ -271,11 +245,63 @@ INSTANTIATE_TEST_CASE_P(
   Test,
   GinVaSignal_test,
   ::testing::Values(
-    GinVaSignalParams{0, 0, CoopLevel::Thread},                  // Context 0, Offset 0, Thread
-    GinVaSignalParams{0, 0, CoopLevel::Warp},                    // Context 0, Offset 0, Warp
-    GinVaSignalParams{0, 0, CoopLevel::Cta},                     // Context 0, Offset 0, Cta
-    GinVaSignalParams{0, sizeof(uint64_t), CoopLevel::Cta},      // Context 0, Offset 8, Cta
-    GinVaSignalParams{1, 0, CoopLevel::Warp}                     // Context 1, Offset 0, Warp
+    GinVaSignalParams{0, 0, CoopLevel::Thread, GinSignalType::Strong},
+    GinVaSignalParams{0, 0, CoopLevel::Cta,    GinSignalType::Legacy},
+    GinVaSignalParams{0, 0, CoopLevel::Warp,   GinSignalType::Legacy},
+    GinVaSignalParams{0, sizeof(uint64_t), CoopLevel::Cta, GinSignalType::Strong}
   ),
   GinVaSignalParamsName
 );
+
+////////////////////////////////////////////////////////////////////////////////
+// Non-parameterized weak VA signal tests
+////////////////////////////////////////////////////////////////////////////////
+
+class GinVaSignalMisc_test : public ncclDevApiCommon_test {
+protected:
+  std::vector<void*> signalBuffers;
+  std::vector<ncclWindow_t> windows;
+
+public:
+  void SetUp() override {
+    ncclDevApiCommon_test::SetUp();
+    allocateAndRegisterWindows(nVis, comms, 2 * sizeof(uint64_t), signalBuffers, windows);
+  }
+
+  void TearDown() override {
+    deregisterAndFreeWindows(nVis, comms, signalBuffers, windows);
+    ncclDevApiCommon_test::TearDown();
+  }
+};
+
+TEST_F(GinVaSignalMisc_test, weak_basic_add) {
+  int numThreads = getNumThreadsForOneCoop(CoopLevel::Cta);
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.ginForceEnable = true;
+  TESTCHECK(createDevComms(reqs));
+
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    signalVaBasicKernel<<<1, numThreads, 0, streams[i]>>>(
+      devComms[i], 0, true, windows[i], 0, CoopLevel::Cta, GinSignalType::Weak);
+  }
+  syncAllDevices();
+  cudaError_t err = cudaGetLastError();
+  ASSERT_EQ(err, cudaSuccess) << "Kernel failed: " << cudaGetErrorString(err);
+}
+
+TEST_F(GinVaSignalMisc_test, weak_basic_inc) {
+  int numThreads = getNumThreadsForOneCoop(CoopLevel::Cta);
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.ginForceEnable = true;
+  TESTCHECK(createDevComms(reqs));
+
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    signalVaBasicKernel<<<1, numThreads, 0, streams[i]>>>(
+      devComms[i], 0, false, windows[i], 0, CoopLevel::Cta, GinSignalType::Weak);
+  }
+  syncAllDevices();
+  cudaError_t err = cudaGetLastError();
+  ASSERT_EQ(err, cudaSuccess) << "Kernel failed: " << cudaGetErrorString(err);
+}

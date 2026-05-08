@@ -965,6 +965,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     int p2pMaxPeers;
     float minNetBw;
     int localNetDeviceCount;
+    int localNetDeviceBw;
     int localCollNetCount;
     int isAllNvlink;
     bool isMultiRankGpu;
@@ -987,6 +988,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   bool isOneLsaTeams = false;
 
   int localNetDeviceCount = 0;
+  int localNetDeviceBw = 0;
   int localCollNetCount = 0;
   int minLocalNetCount = INT_MAX;
   int maxLocalNetCount = 0;
@@ -1206,7 +1208,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   NCCLCHECKGOTO(ncclCalloc(&allGather3Data, nranks), ret, fail);
 
   if (comm->ncclNet && comm->ncclNet->devices) {
+    int gpu;
+    float bw;
     NCCLCHECKGOTO(comm->ncclNet->devices(&localNetDeviceCount), ret, fail);
+    NCCLCHECKGOTO(ncclTopoRankToIndex(comm->topo, comm->rank, &gpu, false), ret, fail);
+    NCCLCHECKGOTO(ncclTopoGetLocalNetCountByBw(comm->topo, gpu, &localNetDeviceBw, &bw), ret, fail);
   }
   if (collNetSupport(comm)) {
     NCCLCHECKGOTO(collNetDevices(comm, &localCollNetCount), ret, fail);
@@ -1231,6 +1237,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   allGather3Data[rank].p2pMaxPeers = comm->p2pMaxPeers;
 
   allGather3Data[rank].localNetDeviceCount = localNetDeviceCount;
+  allGather3Data[rank].localNetDeviceBw = localNetDeviceBw;
   allGather3Data[rank].localCollNetCount = localCollNetCount;
   allGather3Data[rank].isMultiRankGpu = comm->isMultiRankGpu;
   NCCLCHECKGOTO(ncclTopoGetMinNetBw(comm->topo, comm->rank, &allGather3Data[rank].minNetBw), ret, fail);
@@ -1247,6 +1254,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   NCCLCHECKGOTO(ncclCalloc(&nodesFirstRank, nranks), ret, fail);
   NCCLCHECKGOTO(ncclCalloc(&nodesTreePatterns, nranks), ret, fail);
   NCCLCHECKGOTO(ncclCalloc(&comm->rankToNode, comm->nRanks), ret, fail);
+  comm->minNetCount = INT_MAX;
+
   for (int r=0; r<nranks; r++) {
     int node;
     int firstRank = allGather3Data[r].topoRanks.ringRecv[0];
@@ -1277,6 +1286,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     if (!allGather3Data[r].isAllNvlink) {
       comm->isAllNvlink = 0;
     }
+    comm->minNetCount = std::min(comm->minNetCount, allGather3Data[r].localNetDeviceBw);
   }
   if (rank == 0) {
     INFO(NCCL_INIT, "Local Net device counts across ranks: min %d max %d", minLocalNetCount, maxLocalNetCount);
@@ -1909,6 +1919,7 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
   int nChannelsPerNetPeerEnv;
   int nvlinkUtilCentricSchedEnableEnv;
   int graphMixingSupportEnv;
+  int graphStreamOrderingEnv;
   int numRmaCtxEnv;
   int maxP2pPeersEnv;
   const char* checkModeEnv;
@@ -2004,6 +2015,17 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
       if (comm->config.maxP2pPeers != NCCL_CONFIG_UNDEF_INT)
         INFO(NCCL_ENV, "Comm config maxP2pPeers reset to NCCL_MAX_P2P_PEERS=%d", maxP2pPeersEnv);
       comm->config.maxP2pPeers = maxP2pPeersEnv;
+    }
+  }
+
+  graphStreamOrderingEnv = ncclParamGraphStreamOrdering();
+  if (graphStreamOrderingEnv != NCCL_CONFIG_UNDEF_INT) {
+    if (graphStreamOrderingEnv != 0 && graphStreamOrderingEnv != 1)
+      INFO(NCCL_ENV, "NCCL_GRAPH_STREAM_ORDERING %d is not valid, leaving it set at %d", graphStreamOrderingEnv, comm->config.graphStreamOrdering);
+    else {
+      if (comm->config.graphStreamOrdering != NCCL_CONFIG_UNDEF_INT)
+        INFO(NCCL_ENV, "Comm config graphStreamOrdering reset to NCCL_GRAPH_STREAM_ORDERING=%d", graphStreamOrderingEnv);
+      comm->config.graphStreamOrdering = graphStreamOrderingEnv;
     }
   }
 
@@ -2184,6 +2206,10 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     if (internalConfigPtr->version < NCCL_VERSION(2, 30, 0)) {
       internalConfigPtr->maxP2pPeers = defaultConfig.maxP2pPeers;
     }
+
+    if (internalConfigPtr->version < NCCL_VERSION(2, 30, 4)) {
+      internalConfigPtr->graphStreamOrdering = defaultConfig.graphStreamOrdering;
+    }
   }
 
   /* check input config attributes, -1 means user-undefined and we should use default value from NCCL. */
@@ -2271,6 +2297,12 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     goto fail;
   }
 
+  if (internalConfigPtr->graphStreamOrdering != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->graphStreamOrdering != 0 && internalConfigPtr->graphStreamOrdering != 1) {
+    WARN("Invalid config graphStreamOrdering attribute value %d", internalConfigPtr->graphStreamOrdering);
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+
   /* default config value can be tuned on different platform. */
   NCCL_CONFIG_DEFAULT(internalConfigPtr, blocking, NCCL_CONFIG_UNDEF_INT, 1, "Blocking", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, cgaClusterSize, NCCL_CONFIG_UNDEF_INT, 4, "CGA cluster size", "%d");
@@ -2290,6 +2322,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   NCCL_CONFIG_DEFAULT(internalConfigPtr, graphUsageMode, NCCL_CONFIG_UNDEF_INT, 2, "graphUsageMode", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, numRmaCtx, NCCL_CONFIG_UNDEF_INT, 1, "numRmaCtx", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, maxP2pPeers, NCCL_CONFIG_UNDEF_INT, NCCL_CONFIG_UNDEF_INT, "maxP2pPeers", "%d");
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, graphStreamOrdering, NCCL_CONFIG_UNDEF_INT, NCCL_CONFIG_UNDEF_INT, "graphStreamOrdering", "%d");
 
   /* assign config to communicator */
   comm->config.blocking = internalConfigPtr->blocking;
@@ -2309,7 +2342,19 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   comm->config.graphUsageMode = internalConfigPtr->graphUsageMode;
   comm->config.numRmaCtx = internalConfigPtr->numRmaCtx;
   comm->config.maxP2pPeers = internalConfigPtr->maxP2pPeers;
+  comm->config.graphStreamOrdering = internalConfigPtr->graphStreamOrdering;
   NCCLCHECKGOTO(envConfigOverride(comm), ret, fail);
+
+  // Resolve to system default (serialize) if neither user config nor env var set it.
+  if (comm->config.graphStreamOrdering == NCCL_CONFIG_UNDEF_INT)
+    comm->config.graphStreamOrdering = 1;
+
+  // Warn and fall back when graphStreamOrdering=0 is combined with graphUsageMode=2 (unsupported).
+  if (comm->config.graphStreamOrdering == 0 && comm->config.graphUsageMode == 2) {
+    WARN("graphStreamOrdering=0 with graphUsageMode=2 (graph mixing) is not supported; "
+         "falling back to graphStreamOrdering=1 for this communicator");
+    comm->config.graphStreamOrdering = 1;
+  }
 
 exit:
   return ret;

@@ -3,11 +3,11 @@ import ml_dtypes
 import pytest
 
 import nccl.core as core
+from nccl import bindings as b
 from nccl.core import typing as t
-from nccl.core.typing import NcclInvalid
 
 
-def test_nccldatatype_from_numpy_and_int_and_size():
+def test_nccldatatype_from_numpy_dtype_and_int_and_size():
     # From numpy dtype - standard types
     assert int(t.NcclDataType(np.dtype("float16"))) == int(t.FLOAT16.value)
     assert int(t.NcclDataType(np.dtype("float32"))) == int(t.FLOAT32.value)
@@ -79,7 +79,7 @@ def test_nccldatatype_ml_dtypes_with_import():
     assert int(t.NcclDataType(np.dtype("float8_e4m3fn"))) == int(t.FLOAT8E4M3.value)
     assert int(t.NcclDataType(np.dtype("float8_e5m2"))) == int(t.FLOAT8E5M2.value)
 
-    # Verify equality (not identity, since constructor creates new instances)
+    # Verify equality (members are IntEnum singletons, so identity also holds)
     assert t.NcclDataType(np.dtype("bfloat16")) == t.BFLOAT16
     assert t.NcclDataType(np.dtype("float8_e4m3fn")) == t.FLOAT8E4M3
     assert t.NcclDataType(np.dtype("float8_e5m2")) == t.FLOAT8E5M2
@@ -90,12 +90,18 @@ def test_nccldatatype_equality_and_hash_and_repr():
     b = t.NcclDataType(int(t.FLOAT32.value))
     assert a == b
     assert hash(a) == hash(b)
-    assert "NcclDataType(" in repr(a)
+    assert "NcclDataType" in repr(a)
+    assert "FLOAT32" in repr(a)
 
 
 def test_nccldatatype_invalid_dtype_raises():
-    with pytest.raises(NcclInvalid):
+    # numpy-dtype path: routed through _missing_ -> from_numpy_dtype, raises NcclInvalid
+    with pytest.raises(t.NcclInvalid):
         t.NcclDataType(np.dtype("complex64"))
+    # non-dtype invalid value: _missing_ returns None, falls through to
+    # IntEnum's default ValueError
+    with pytest.raises(ValueError):
+        t.NcclDataType(99)
 
 
 def test_redop_valid_and_invalid():
@@ -114,8 +120,6 @@ def test_redop_valid_and_invalid():
         assert op.value == op_value
         # .name property should match expected name (case-insensitive)
         assert op.name.lower() == op_name
-        # __str__ and __repr__ should contain the name
-        assert op_name in str(op).lower()
         assert op_name in repr(op).lower()
         # NcclRedOp should be equal to itself
         assert int(t.NcclRedOp(op_value)) == op_value
@@ -126,8 +130,8 @@ def test_redop_valid_and_invalid():
     op = t.NcclRedOp(core.SUM.value)
     assert int(op) == int(op.value)
 
-    # Test invalid RedOp raises NcclInvalid
-    with pytest.raises(NcclInvalid):
+    # Test invalid RedOp raises IntEnum's default ValueError
+    with pytest.raises(ValueError):
         t.NcclRedOp(999999)
 
     # Test that NcclRedOp constructed from NcclRedOp.value is idempotent
@@ -151,3 +155,65 @@ def test_public_constants_exposed_from_core():
     # RedOps
     for name in ["SUM","PROD","MAX","MIN","AVG"]:
         assert hasattr(core, name)
+
+
+# --- Parity with nccl.bindings ----------------------------------------------
+#
+# One test per Python enum defined in nccl.core.typing. NcclDataType and
+# NcclRedOp parity uses the module-level constants since those are the
+# user-facing surface; the other enums are checked member-by-member via
+# attribute access on both sides.
+
+
+def test_nccldatatype_parity():
+    assert int(t.INT8)       == int(b.DataType.Int8)
+    assert int(t.CHAR)       == int(b.DataType.Char)
+    assert int(t.UINT8)      == int(b.DataType.Uint8)
+    assert int(t.INT32)      == int(b.DataType.Int32)
+    assert int(t.INT)        == int(b.DataType.Int)
+    assert int(t.UINT32)     == int(b.DataType.Uint32)
+    assert int(t.INT64)      == int(b.DataType.Int64)
+    assert int(t.UINT64)     == int(b.DataType.Uint64)
+    assert int(t.FLOAT16)    == int(b.DataType.Float16)
+    assert int(t.HALF)       == int(b.DataType.Half)
+    assert int(t.FLOAT32)    == int(b.DataType.Float32)
+    assert int(t.FLOAT)      == int(b.DataType.Float)
+    assert int(t.FLOAT64)    == int(b.DataType.Float64)
+    assert int(t.DOUBLE)     == int(b.DataType.Double)
+    assert int(t.BFLOAT16)   == int(b.DataType.Bfloat16)
+    assert int(t.FLOAT8E4M3) == int(b.DataType.Float8e4m3)
+    assert int(t.FLOAT8E5M2) == int(b.DataType.Float8e5m2)
+
+
+def test_nccredop_parity():
+    assert int(t.SUM)  == int(b.RedOp.Sum)
+    assert int(t.PROD) == int(b.RedOp.Prod)
+    assert int(t.MAX)  == int(b.RedOp.Max)
+    assert int(t.MIN)  == int(b.RedOp.Min)
+    assert int(t.AVG)  == int(b.RedOp.Avg)
+
+
+def test_nccl_commmemstat_parity():
+    # Canonical SCREAMING_SNAKE_CASE members match the Cython binding values.
+    assert int(t.NcclCommMemStat.GPU_MEM_SUSPEND)   == int(b.CommMemStat.GpuMemSuspend)
+    assert int(t.NcclCommMemStat.GPU_MEM_SUSPENDED) == int(b.CommMemStat.GpuMemSuspended)
+    assert int(t.NcclCommMemStat.GPU_MEM_PERSIST)   == int(b.CommMemStat.GpuMemPersist)
+    assert int(t.NcclCommMemStat.GPU_MEM_TOTAL)     == int(b.CommMemStat.GpuMemTotal)
+    # Backward-compat camelCase aliases resolve to the canonical singletons.
+    assert t.NcclCommMemStat.GpuMemSuspend   is t.NcclCommMemStat.GPU_MEM_SUSPEND
+    assert t.NcclCommMemStat.GpuMemSuspended is t.NcclCommMemStat.GPU_MEM_SUSPENDED
+    assert t.NcclCommMemStat.GpuMemPersist   is t.NcclCommMemStat.GPU_MEM_PERSIST
+    assert t.NcclCommMemStat.GpuMemTotal     is t.NcclCommMemStat.GPU_MEM_TOTAL
+
+
+def test_nccl_gintype_parity():
+    assert int(t.NcclGinType.NONE)  == int(b.GinType.NONE)
+    assert int(t.NcclGinType.PROXY) == int(b.GinType.PROXY)
+    assert int(t.NcclGinType.GDAKI) == int(b.GinType.GDAKI)
+    assert int(t.NcclGinType.GPI)   == int(b.GinType.GPI)
+
+
+def test_nccl_ginconnectiontype_parity():
+    assert int(t.NcclGinConnectionType.NONE) == int(b.GinConnectionType.NONE)
+    assert int(t.NcclGinConnectionType.FULL) == int(b.GinConnectionType.FULL)
+    assert int(t.NcclGinConnectionType.RAIL) == int(b.GinConnectionType.RAIL)

@@ -6,6 +6,7 @@
 
 - [GIN get](items/id_c3200938/GIN_get.md)
 - [Enabling DDP in NET IB](items/id_DE55495D/Enabling_DDP_in_NET_IB.md)
+- [Graph Stream Ordering Bypass](items/id_a3c7f1e2/Graph_Stream_Ordering_Bypass.md)
 - [TMA Support for Symmetric Kernels](items/id_8B5583C2/TMA_Support_for_Symmetric_Kernels.md)
 - [alltoallv perf test](items/id_4b0fb00b/alltoallv_perf_test.md)
 - [NVL576: Cross Clique P2P IPC Support](items/id_80B28435/Cross-Clique_P2P_IPC_Support.md)

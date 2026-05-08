@@ -68,5 +68,6 @@ contrib/nccl_ep/
 
 [Sylvain Watches]
 test/binary/ @sjeaugey
+src/libnccl.map @sjeaugey
 !test/binary/CMakeLists.txt
 !test/binary/Makefile

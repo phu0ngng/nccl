@@ -67,9 +67,9 @@ __global__ void runDevice(ncclGinCtx_M<-1u> ctx, ncclGinWindow_t win, int* buf) 
         /*hasDescriptor=*/false, nullptr,
         cuda::thread_scope_thread, cuda::thread_scope_thread);
       // Wait for downstream to give us free space
-      uint64_t* ptr = ncclGinCall<ncclGinApi_GetSignalPtr>(ctx, sigFree0 + blockIdx.x);
-      cuda::atomic_ref<uint64_t> ref{*ptr};
-      while (ref.load(acq) < 1+round) continue;
+      ncclGinOffsetPtr sig = ncclGinCall<ncclGinApi_GetSignalPtr>(ctx, sigFree0 + blockIdx.x);
+      cuda::atomic_ref<uint64_t> ref{*sig.ptr};
+      while (ref.load(acq) - sig.offset < 1+round) continue;
     }
     __syncthreads();
 
@@ -93,9 +93,9 @@ __global__ void runDevice(ncclGinCtx_M<-1u> ctx, ncclGinWindow_t win, int* buf) 
     }
     __syncthreads();
     if (t==0) {
-      uint64_t* ptr = ncclGinCall<ncclGinApi_GetSignalPtr>(ctx, sigData0 + blockIdx.x);
-      cuda::atomic_ref<uint64_t> ref{*ptr};
-      while (ref.load(acq) < accum + nChunks) continue;
+      ncclGinOffsetPtr sig = ncclGinCall<ncclGinApi_GetSignalPtr>(ctx, sigData0 + blockIdx.x);
+      cuda::atomic_ref<uint64_t> ref{*sig.ptr};
+      while (ref.load(acq) - sig.offset < accum + nChunks) continue;
     }
     __syncthreads();
     // Wait for outgoing is complete.

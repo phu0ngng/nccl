@@ -72,6 +72,7 @@ ctypedef enum ncclGinType_t "ncclGinType_t":
     NCCL_GIN_TYPE_NONE "NCCL_GIN_TYPE_NONE" = 0
     NCCL_GIN_TYPE_PROXY "NCCL_GIN_TYPE_PROXY" = 2
     NCCL_GIN_TYPE_GDAKI "NCCL_GIN_TYPE_GDAKI" = 3
+    NCCL_GIN_TYPE_GPI "NCCL_GIN_TYPE_GPI" = 4
 
 ctypedef enum ncclGinConnectionType_t "ncclGinConnectionType_t":
     NCCL_GIN_CONNECTION_NONE "NCCL_GIN_CONNECTION_NONE" = 0
@@ -211,6 +212,7 @@ ctypedef struct ncclDevComm_t 'ncclDevComm_t':
     uint64_t* ginSignalShadows
     uint32_t ginContextCount
     uint8_t ginIsRailed
+    uint8_t ginStrongLegacySignals
     uint32_t* abortFlag
     ncclLsaBarrierHandle_t hybridLsaBarrier
     ncclGinBarrierHandle_t hybridRailGinBarrier
@@ -237,6 +239,7 @@ ctypedef struct ncclDevCommRequirements_t 'ncclDevCommRequirements_t':
     int ginQueueDepth
     int ginTrafficClass
     int worldGinBarrierCount
+    uint8_t ginStrongSignalsRequired
 
 
 

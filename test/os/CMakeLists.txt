@@ -8,6 +8,7 @@ elseif(NCCL_OS_LINUX)
 endif()
 
 add_library(nccl_test_os STATIC ${OS_SOURCES})
+add_dependencies(nccl_test_os nccl_header)
 
 # Set include directories
 target_include_directories(nccl_test_os

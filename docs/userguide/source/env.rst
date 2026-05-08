@@ -62,6 +62,22 @@ Values accepted
 
 Set to ``AF_INET`` to force the use of IPv4, or ``AF_INET6`` to force IPv6 usage.
 
+.. _NCCL_SOCKET_MAGIC:
+
+NCCL_SOCKET_MAGIC
+-----------------
+
+The ``NCCL_SOCKET_MAGIC`` variable overrides the 64-bit magic value used in NCCL's internal TCP socket handshake for transports that rely on it (for example the Socket network plugin and InfiniBand connection bootstrap sockets). It does **not** change bootstrap communicators that use ``NCCL_COMM_ID`` or :c:func:`ncclGetUniqueId`; those use a separate per-communicator magic.
+
+Setting the same value on every process in a job (for example ``0x$(printf '%x' "$SLURM_JOB_ID")`` under Slurm) can reduce accidental cross-talk when unrelated workloads share nodes and ports.
+
+Values accepted
+^^^^^^^^^^^^^^^
+
+Unset or empty: NCCL uses the historical built-in default.
+
+Otherwise: a non-negative integer in decimal or hexadecimal (with optional ``0x`` prefix), parsed as for ``strtoull(..., 0)``. Invalid strings fall back to the built-in default with a warning.
+
 NCCL_SOCKET_RETRY_CNT
 -----------------------------
 (since 2.24)
@@ -540,6 +556,8 @@ INFO - Prints debug information.
 
 TRACE - Prints replayable trace information on every call.
 
+.. _NCCL_DEBUG_FILE:
+
 NCCL_DEBUG_FILE
 ---------------
 (since 2.2.12)
@@ -557,6 +575,8 @@ output to those predefined I/O streams. This also has the effect of making the o
 Setting ``NCCL_DEBUG_FILE`` will cause NCCL to create and overwrite any previous files of that name.
 
 Note: If the filename is not unique across all the job processes, then the output may be lost or corrupted.
+
+.. _NCCL_DEBUG_SUBSYS:
 
 NCCL_DEBUG_SUBSYS
 -----------------
@@ -579,6 +599,8 @@ for memory allocations), CALL (stands for function calls), PROXY (stands for the
 (stands for coarse-grained profiling of initialization), RAS (stands for reliability, availability, and serviceability
 subsystem), DESTROY (stands for communicator destroy, abort, revoke, and plugin unload/close operations)
 and ALL (includes every subsystem).
+
+.. _NCCL_DEBUG_TIMESTAMP_FORMAT:
 
 NCCL_DEBUG_TIMESTAMP_FORMAT
 ---------------------------
@@ -615,6 +637,8 @@ indicates how many digits will be printed. For example, ``%3f`` will
 print milliseconds. The value is zero padded. For example:
 :literal:`[%F %T.%9f] \ `. (Note that this can only be used once in the format
 string.)
+
+.. _NCCL_DEBUG_TIMESTAMP_LEVELS:
 
 NCCL_DEBUG_TIMESTAMP_LEVELS
 ---------------------------
@@ -1452,6 +1476,73 @@ Enable/disable support for multiple outstanding NCCL calls from parallel CUDA gr
 2. Launching a non-captured NCCL collective during an outstanding graph launch that uses the same communicator (or split-shared communicators), regardless of stream ordering.
 
 The ability to disable support is motivated by observed hangs in the CUDA launches when support is enabled and multiple ranks have work launched via cudaGraphLaunch from the same thread.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default is 1 (enabled).
+
+.. _NCCL_GRAPH_STREAM_ORDERING:
+
+NCCL_GRAPH_STREAM_ORDERING
+--------------------------
+(since 2.30)
+
+Allow applications to disable NCCL's internal serialization of communication
+kernels during CUDA graph capture, as a performance optimization for capture-heavy
+workloads (for example, frameworks that re-capture graphs frequently or that wrap
+each collective in its own CUDA subgraph). This setting has no effect outside of
+CUDA graph capture.
+
+.. warning::
+
+   ``NCCL_GRAPH_STREAM_ORDERING=0`` together with **graph mixing** (communicator
+   ``graphUsageMode=2``; see :ref:`ncclconfig`) is **not supported**. If stream
+   ordering is disabled for a communicator, **graph mixing must be off**—use
+   ``graphUsageMode`` ``0`` or ``1`` (and note that :ref:`NCCL_GRAPH_MIXING_SUPPORT`
+   ``1`` forces ``graphUsageMode=2`` at init, overriding an explicit lower mode).
+   Workloads that require mixing must keep the default ``1``. The same rule applies
+   to per-communicator :c:macro:`graphStreamOrdering` ``0``.
+
+When set to 1 (default), NCCL guarantees that communication kernels are executed
+in a serialized and deterministic order across graphs and communicators that share
+a GPU, with no ordering responsibility placed on the application.
+
+When set to 0, NCCL's internal serialization guarantee is disabled and
+communication kernels are placed on the stream used to begin the graph capture.
+The application is responsible for ensuring correct ordering of communication
+kernels.
+
+The same bypass can be selected per communicator with the
+:c:macro:`graphStreamOrdering` field in :ref:`ncclconfig`. When that
+field is ``0`` or ``1``, it overrides ``NCCL_GRAPH_STREAM_ORDERING`` for that
+communicator. Communicators on the same GPU may still set this option
+differently; NCCL does not order them with respect to each other in that case,
+so the application's obligations below apply whenever the bypass is in effect
+for a communicator—see :c:macro:`graphStreamOrdering` for details.
+
+.. admonition:: Application responsibilities
+
+   With ``NCCL_GRAPH_STREAM_ORDERING=0`` (or
+   :c:macro:`graphStreamOrdering` ``0``), NCCL stops enforcing
+   device-side serialization of communication kernels on the graph-capture
+   path. The application must then guarantee:
+
+   1. **Serialization on the GPU.** NCCL operations must not overlap: at
+      most one NCCL operation may execute on a given GPU at a time.
+
+   2. **Scope.** The rule applies across communicators, across different
+      captured graphs, and between captured and uncaptured NCCL work. The
+      ordering must hold at replay / execution, not only as expressed at
+      capture time.
+
+   3. **How to satisfy it.** The simplest approach is to enqueue **all**
+      NCCL operations on the **same CUDA stream**. Equivalent serialization
+      can be achieved with device-wide synchronization and/or CUDA event
+      dependencies between streams.
+
+   Network (proxy) transports are unaffected by this setting; NCCL continues
+   to provide its normal host-side ordering guarantees for those transports
+   regardless of the value of ``NCCL_GRAPH_STREAM_ORDERING``.
 
 Value accepted
 ^^^^^^^^^^^^^^
