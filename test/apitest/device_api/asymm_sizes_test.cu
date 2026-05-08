@@ -55,6 +55,11 @@ __global__ void putAsymmetricSizesKernel(ncclDevComm comm, ncclWindow_t putWindo
 }
 
 __global__ void lsaStoreAsymmetricSizesKernel(ncclDevComm comm, ncclWindow_t putWindow) {
+    ncclTeam lsa = ncclTeamLsa(comm);
+    if (lsa.nRanks < 2) {
+      return;
+    }
+
 #if __CUDA_ARCH__ >= 700
   if (comm.rank == kSrcRank) {
     uint64_t* putSrcPtr = (uint64_t*)ncclGetLocalPointer(putWindow, kSrcOffset);
