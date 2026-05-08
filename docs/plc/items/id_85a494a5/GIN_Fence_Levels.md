@@ -9,8 +9,7 @@ hybrid `Barrier` with a two-pass LSA design so it provides world-scope
 fence semantics on railed setups (matching `GinBarrier(World)`). Add a
 sentinel context value `NCCL_GIN_CONTEXT_ALL` for users who spread
 operations across multiple GIN contexts (multi-NIC) and need a single
-barrier call that drains every context. Reserve `NCCL_GIN_CONTEXT_ANY`
-for a future ergonomic feature without breaking the API later.
+barrier call that drains every context.
 
 <!-- ============================================================================================-->
 <details>
@@ -115,8 +114,6 @@ LSA #2 is gated on `fence != None` (the cross-rail completion property is only m
 
 ```cpp
 #define NCCL_GIN_CONTEXT_ALL  (-1)   // implemented in this PR
-#define NCCL_GIN_CONTEXT_ANY  (-2)   // reserved; falls back to context 0 in this PR
-                                     // future: blockIdx.x % comm.ginContextCount
 ```
 
 `NCCL_GIN_CONTEXT_ALL` only expands the *fence* — the barrier's per-peer signal/wait loop still runs on a single context (the fallback context 0 chosen at construction). `put`/`get`/`signal` on a `ncclGin` constructed with `NCCL_GIN_CONTEXT_ALL` operate on context 0 by virtue of the same fallback.
@@ -133,7 +130,6 @@ enum class ncclGinFenceLevel { None, Put, Get, All };
 
 // core.h
 #define NCCL_GIN_CONTEXT_ALL  (-1)
-#define NCCL_GIN_CONTEXT_ANY  (-2)
 
 // sync signatures (existing, fence semantics now real)
 void ncclGinBarrierSession::sync(Coop, cuda::memory_order, ncclGinFenceLevel);
@@ -198,7 +194,7 @@ Targeting the v2.30 release cycle. Each fence level must be exercised end-to-end
 | `test/unit/devapi_barrier_with_timeout.cu` | Each fence level still respects `timeoutCycles`. |
 | `test/unit/devapi_barrier_lsa.cu` | LSA-only path unchanged. Existing convenience-API test still passes. |
 | `test/unit/devapi_barrier_multictx.cu` (NEW) | Multi-context fence: each rank issues puts on context 0 and context 1; `Barrier(World, fence=All)` constructed from `ncclGin(..., NCCL_GIN_CONTEXT_ALL)` drains both. Negative case: same setup with single-context gin (`contextIndex=0`) only drains context 0. |
-| Smoke tests | (1) `ncclBarrierSync` / `ncclGinBarrierSync` with default args compile and behave correctly. (2) `ncclGin(comm, mask, NCCL_GIN_CONTEXT_ANY)` constructs without crash and falls back to context 0 deterministically. |
+| Smoke tests | `ncclBarrierSync` / `ncclGinBarrierSync` with default args compile and behave correctly. |
 
 Build:
 ```bash
@@ -212,7 +208,7 @@ make -C test/unit devapi_barrier devapi_mixed_barriers \
 - All tests pass at every fence level on both backends.
 - Multi-context test: with `NCCL_GIN_CONTEXT_ALL` gin, every put on every context is visible after barrier exit. Negative case verifies the single-context gin only fences its own context.
 - Cross-rail test: every node-mate transitively sees the other rail's puts after exit.
-- Smoke tests confirm defaults compile cleanly (no overload-resolution surprises) and `NCCL_GIN_CONTEXT_ANY` does not crash.
+- Smoke tests confirm defaults compile cleanly (no overload-resolution surprises).
 
 ### Performance
 
