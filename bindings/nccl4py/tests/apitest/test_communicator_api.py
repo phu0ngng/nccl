@@ -17,6 +17,19 @@ except ImportError:
     HAS_CUPY = False
 
 
+def _wait_for_comm(comm, timeout_s=30.0):
+    deadline = time.monotonic() + timeout_s
+    while True:
+        state = comm.get_async_error()
+        if state == nccl_bindings.Result.Success:
+            return
+        if state != nccl_bindings.Result.InProgress:
+            raise RuntimeError(f"communicator async state completed with {state}")
+        if time.monotonic() >= deadline:
+            raise TimeoutError("communicator async state did not complete before timeout")
+        time.sleep(0.01)
+
+
 @pytest.mark.mpi
 def test_init_without_config(uid_shared, rank_info):
     device = Device(rank_info.nccl_local_rank)
@@ -182,6 +195,168 @@ def test_grow(rank_info):
     if rank < initial_size:
         comm.destroy()
     initial_mpi.Free()
+
+
+@pytest.mark.mpi
+def test_nonblocking_init(uid_shared, rank_info):
+    device = Device(rank_info.nccl_local_rank)
+    device.set_current()
+
+    comm = nccl.Communicator.init(
+        nranks=rank_info.nccl_size,
+        rank=rank_info.nccl_rank,
+        unique_id=uid_shared,
+        config=nccl.NCCLConfig(blocking=False),
+    )
+
+    _wait_for_comm(comm)
+    assert comm.is_valid
+    assert comm.nranks == rank_info.nccl_size
+    assert comm.rank == rank_info.nccl_rank
+    comm.destroy()
+
+
+@requires_nccl_version("2.18.1")
+@pytest.mark.mpi(min_size=2)
+def test_nonblocking_split(uid_shared, rank_info):
+    device = Device(rank_info.nccl_local_rank)
+    device.set_current()
+
+    base = nccl.Communicator.init(
+        nranks=rank_info.nccl_size,
+        rank=rank_info.nccl_rank,
+        unique_id=uid_shared,
+        config=nccl.NCCLConfig(blocking=False),
+    )
+    _wait_for_comm(base)
+
+    sub = base.split(color=0, key=rank_info.nccl_rank)
+    _wait_for_comm(base)
+    _wait_for_comm(sub)
+    assert sub.is_valid
+    assert sub.nranks == rank_info.nccl_size
+    assert sub.rank == rank_info.nccl_rank
+
+    sub.destroy()
+    base.destroy()
+
+
+@requires_nccl_version("2.27.3")
+@pytest.mark.mpi(min_size=2)
+def test_nonblocking_shrink(uid_shared, rank_info):
+    device = Device(rank_info.nccl_local_rank)
+    device.set_current()
+
+    base = nccl.Communicator.init(
+        nranks=rank_info.nccl_size,
+        rank=rank_info.nccl_rank,
+        unique_id=uid_shared,
+        config=nccl.NCCLConfig(blocking=False),
+    )
+    _wait_for_comm(base)
+
+    exclude_ranks = [rank_info.nccl_size - 1]
+    if rank_info.nccl_rank not in exclude_ranks:
+        shrunk = base.shrink(exclude_ranks=exclude_ranks)
+        _wait_for_comm(base)
+        _wait_for_comm(shrunk)
+        assert shrunk.is_valid
+        assert shrunk.nranks == rank_info.nccl_size - len(exclude_ranks)
+        assert shrunk.rank == rank_info.nccl_rank
+        shrunk.destroy()
+
+    base.destroy()
+
+
+@requires_nccl_version("2.27.3")
+@pytest.mark.mpi
+def test_nonblocking_window_register(uid_shared, rank_info):
+    if not HAS_CUPY:
+        pytest.skip("CuPy not installed")
+
+    device = Device(rank_info.nccl_local_rank)
+    device.set_current()
+
+    comm = None
+    win = None
+    try:
+        comm = nccl.Communicator.init(
+            nranks=rank_info.nccl_size,
+            rank=rank_info.nccl_rank,
+            unique_id=uid_shared,
+            config=nccl.NCCLConfig(blocking=False),
+        )
+        _wait_for_comm(comm)
+
+        buf = nccl.cupy.empty(256, dtype="float32")
+        win = comm.register_window(buf)
+        _wait_for_comm(comm)
+
+        if win is None or win.handle == 0:
+            pytest.skip("Window registration not supported")
+
+        assert win.is_valid
+        assert win.handle != 0
+    finally:
+        if win is not None and win.is_valid:
+            win.close()
+        if comm is not None and comm.is_valid:
+            comm.destroy()
+
+
+@requires_nccl_version("2.29.0")
+@pytest.mark.mpi(min_size=2)
+def test_nonblocking_grow(rank_info):
+    device = Device(rank_info.nccl_local_rank)
+    device.set_current()
+
+    mpi_comm = MPI.COMM_WORLD
+    total_ranks = rank_info.nccl_size
+    initial_size = total_ranks - 1
+    rank = rank_info.nccl_rank
+    is_existing_rank = rank < initial_size
+
+    uid = nccl.get_unique_id(empty=(rank != 0))
+    mpi_comm.Bcast([uid.as_ndarray, MPI.BYTE], root=0)
+
+    parent = None
+    if is_existing_rank:
+        parent = nccl.Communicator.init(
+            nranks=initial_size,
+            rank=rank,
+            unique_id=uid,
+            config=nccl.NCCLConfig(blocking=False),
+        )
+        _wait_for_comm(parent)
+
+    if rank == 0:
+        grow_uid = parent.get_unique_id()
+    else:
+        grow_uid = nccl.get_unique_id(empty=True)
+    mpi_comm.Bcast([grow_uid.as_ndarray, MPI.BYTE], root=0)
+
+    grow_config = nccl.NCCLConfig(blocking=False)
+    if is_existing_rank:
+        if rank == 0:
+            grown = parent.grow(nranks=total_ranks, unique_id=grow_uid, config=grow_config)
+        else:
+            grown = parent.grow(nranks=total_ranks, config=grow_config)
+    else:
+        grown = nccl.Communicator().grow(
+            nranks=total_ranks,
+            unique_id=grow_uid,
+            rank=rank,
+            config=grow_config,
+        )
+
+    _wait_for_comm(grown)
+    assert grown.is_valid
+    assert grown.nranks == total_ranks
+    assert grown.rank == rank
+
+    grown.destroy()
+    if parent is not None:
+        parent.destroy()
 
 
 @requires_nccl_version("2.18.1")
