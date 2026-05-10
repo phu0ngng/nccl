@@ -1,0 +1,104 @@
+nccl_ep:
+  module: nccl4py.ep.bindings.nccl_ep
+  data:
+    versions:
+    - - 1.0.0
+    headers:
+    - nccl_ep.h
+    patterns:
+      function: (^nccl)([A-Z].*)
+      type: (^nccl)([A-Z][A-Za-z_].*)_t$
+    need_cuda: true
+    need_driver: false
+    support_win: false
+    docstrings: null
+    need_headers_at_build: false
+    include_cybind_version: false
+  functions:
+    # Group lifecycle.
+    # Allocator hooks live inside ncclEpGroupConfig_t::alloc (ncclEpAllocConfig_t);
+    # see the Pythonic wrapper in nccl/ep/allocator.py for how alloc_fn / free_fn
+    # / context get plumbed through.
+    ncclEpCreateGroup:
+      return: ep_group
+      except?: 0
+    ncclEpGroupDestroy: {}
+
+    # Tensor lifecycle.
+    # ncclEpTensorCreate / ncclEpTensorCreateFromWindow take `const size_t* sizes`;
+    # the Pythonic facade in nccl/ep/tensor.py packs a Python sequence into a
+    # size_t buffer before passing it in.
+    ncclEpTensorCreate:
+      return: tensor
+      except?: 0
+    ncclEpTensorCreateFromWindow:
+      return: tensor
+      except?: 0
+    ncclEpTensorDestroy: {}
+    ncclEpTensorGetData:
+      return: data
+      except?: 0
+    ncclEpTensorGetSizes: {}
+
+    # Handle lifecycle.
+    # Named-struct ABI: ncclEp*Config_t / ncclEpLayoutInfo_t are declared
+    # below as AUTO_LOWPP_CLASS so cybind exposes them as Python classes;
+    # the Pythonic facade in nccl/ep/handle.py constructs them and forwards
+    # the underlying struct pointer via .ptr.
+    ncclEpCreateHandle:
+      return: handle
+      except?: 0
+    ncclEpInitHandle:
+      return: handle
+      except?: 0
+    ncclEpHandleDestroy: {}
+    ncclEpHandleMemSize:
+      return: size_out
+      except?: -1
+    ncclEpUpdateHandle: {}
+
+    # Dispatch / Combine / Complete (named-struct ABI; see note above).
+    ncclEpDispatch: {}
+    ncclEpCombine: {}
+    ncclEpComplete: {}
+
+  types:
+    # ncclEpCompleteConfig_t is a reserved struct (single placeholder
+    # field). Don't emit a lowpp wrapper class — callers always pass
+    # NULL today, so a Python `EpCompleteConfig` would just be noise.
+    # The struct still gets a ctypedef in cynccl_ep.pxd so the function
+    # signature `const ncclEpCompleteConfig_t* config` resolves.
+    ncclEpCompleteConfig_t: SKIP_LOWPP
+    # ncclEpAllocConfig_t has C function-pointer fields; cybind can't auto-
+    # convert ncclEpAlloc/FreeFn_t to/from Python, so route through intptr_t
+    # via per-member getter/setter overrides. Users pass and read raw
+    # function addresses (e.g. from ctypes.cast(fn, ctypes.c_void_p).value).
+    ncclEpAllocConfig_t:
+      AUTO_LOWPP_CLASS:
+        alloc_fn:
+          getter: |-
+            return <intptr_t>(self._ptr[0].alloc_fn)
+          setter: |-
+            self._ptr[0].alloc_fn = <ncclEpAllocFn_t><intptr_t>val
+        free_fn:
+          getter: |-
+            return <intptr_t>(self._ptr[0].free_fn)
+          setter: |-
+            self._ptr[0].free_fn = <ncclEpFreeFn_t><intptr_t>val
+    ncclEpGroupConfig_t: AUTO_LOWPP_CLASS
+    ncclEpHandleConfig_t: AUTO_LOWPP_CLASS
+    ncclEpDispatchConfig_t: AUTO_LOWPP_CLASS
+    ncclEpCombineConfig_t: AUTO_LOWPP_CLASS
+    ncclEpLayoutInfo_t: AUTO_LOWPP_CLASS
+    ncclEpDispatchInputs_t: AUTO_LOWPP_CLASS
+    ncclEpDispatchOutputs_t: AUTO_LOWPP_CLASS
+    ncclEpCombineInputs_t: AUTO_LOWPP_CLASS
+    ncclEpCombineOutputs_t: AUTO_LOWPP_CLASS
+
+  attrs: {}
+  enums:
+    ^nccl: ''
+    ^NCCL_EP_TENSOR_FLAG_: ''
+    ^ALGO_: ''
+    ^LAYOUT_: ''
+    ^TENSOR_TAG_: ''
