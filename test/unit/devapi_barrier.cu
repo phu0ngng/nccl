@@ -19,7 +19,7 @@ __global__ void runDevice(ncclDevComm comm) {
   ncclGin net(comm, 0);
   ncclBarrierSession<ncclCoopCta> bar(ncclCoopCta(), ncclTeamTagWorld(), net, blockIdx.x);
   for (int round=0; round < 10; round++) {
-    bar.sync(ncclCoopCta(), cuda::memory_order_relaxed, ncclGinFenceLevel::Relaxed);
+    bar.sync(ncclCoopCta(), cuda::memory_order_relaxed, ncclGinFenceLevel::None);
     if (t==0 && blockIdx.x==0 && world.rank == round%world.nRanks) {
       printf("Round %d\n", round);
     }

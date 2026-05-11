@@ -312,7 +312,7 @@ __global__ void GinAlltoAllKernel(ncclWindow_t sendwin, size_t sendoffset, ncclW
 #else
   ncclBarrierSession<ncclCoopCta> bar { ncclCoopCta(), ncclTeamTagWorld(), gin, blockIdx.x };
 #endif
-  bar.sync(ncclCoopCta(), cuda::memory_order_acquire, ncclGinFenceLevel::Relaxed);
+  bar.sync(ncclCoopCta(), cuda::memory_order_acquire, ncclGinFenceLevel::None);
 
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
   int nthreads = blockDim.x * gridDim.x;
@@ -332,7 +332,7 @@ __global__ void GinAlltoAllKernel(ncclWindow_t sendwin, size_t sendoffset, ncclW
     gin.waitSignal(ncclCoopCta(), signalIndex, signalValue + devComm.nRanks);
   gin.flush(ncclCoopCta());
 #if NCCL_VERSION_CODE < NCCL_VERSION(2, 30, 0)
-  bar.sync(ncclCoopCta(), cuda::memory_order_release, ncclGinFenceLevel::Relaxed);
+  bar.sync(ncclCoopCta(), cuda::memory_order_release, ncclGinFenceLevel::None);
 #endif
 }
 
@@ -344,7 +344,7 @@ __global__ void HybridAlltoAllKernel(ncclWindow_t sendwin, size_t sendoffset, nc
   uint64_t signalValue = gin.readSignal(signalIndex);
 
   ncclBarrierSession<ncclCoopCta> bar { ncclCoopCta(), ncclTeamTagWorld(), gin, blockIdx.x };
-  bar.sync(ncclCoopCta(), cuda::memory_order_acquire, ncclGinFenceLevel::Relaxed);
+  bar.sync(ncclCoopCta(), cuda::memory_order_acquire, ncclGinFenceLevel::None);
 
   int tid = threadIdx.x + blockIdx.x*blockDim.x;
   int nthreads = blockDim.x * gridDim.x;
@@ -381,7 +381,7 @@ __global__ void HybridAlltoAllKernel(ncclWindow_t sendwin, size_t sendoffset, nc
     gin.waitSignal(ncclCoopCta(), signalIndex, signalValue + numRemotePeers);
   gin.flush(ncclCoopCta());
 
-  bar.sync(ncclCoopCta(), cuda::memory_order_release, ncclGinFenceLevel::Relaxed);
+  bar.sync(ncclCoopCta(), cuda::memory_order_release, ncclGinFenceLevel::None);
 }
 
 template <typename T>
@@ -398,7 +398,7 @@ __global__ void GinAlltoAllKernelMultiContext(ncclWindow_t sendwin, size_t sendo
 #else
   ncclBarrierSession<ncclCoopCta> bar { ncclCoopCta(), ncclTeamTagWorld(), gin, blockIdx.x };
 #endif
-  bar.sync(ncclCoopCta(), cuda::memory_order_acquire, ncclGinFenceLevel::Relaxed);
+  bar.sync(ncclCoopCta(), cuda::memory_order_acquire, ncclGinFenceLevel::None);
   int myPeerStart = (blockIdx.x * devComm.nRanks) / gridDim.x;
   int myPeerEnd = ((blockIdx.x + 1) * devComm.nRanks) / gridDim.x;
   /* each CTA sends to 1+ assigned peers; threads within CTA parallelize the work */
@@ -416,7 +416,7 @@ __global__ void GinAlltoAllKernelMultiContext(ncclWindow_t sendwin, size_t sendo
     gin.waitSignal(ncclCoopCta(), signalIndex, signalValue + devComm.nRanks);
   gin.flush(ncclCoopCta());
 #if NCCL_VERSION_CODE < NCCL_VERSION(2, 30, 0)
-  bar.sync(ncclCoopCta(), cuda::memory_order_release, ncclGinFenceLevel::Relaxed);
+  bar.sync(ncclCoopCta(), cuda::memory_order_release, ncclGinFenceLevel::None);
 #endif
 }
 #endif // !defined(NCCL_OS_WINDOWS)

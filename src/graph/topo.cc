@@ -17,6 +17,7 @@
 #else
 #include "gin.h"
 #endif
+#include "rma.h"
 #include "transport.h"
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -28,7 +29,7 @@
 #define BUSID_SIZE (sizeof("0000:00:00.0"))
 #define BUSID_REDUCED_SIZE (sizeof("0000:00"))
 
-const char* topoNodeTypeStr[] = { "GPU", "PCI", "NVS", "CPU", "NIC", "NET", "GIN", "DEV" };
+const char* topoNodeTypeStr[] = { "GPU", "PCI", "NVS", "CPU", "NIC", "NET", "GIN", "RMA", "DEV" };
 const char* topoLinkTypeStr[] = { "LOC", "NVL", "",    "C2C", "PCI",    "",    "",    "",    "", "SYS", "NET" };
 const char* topoPathTypeStr[] = { "LOC", "NVL", "NVB", "C2C", "PIX", "PXB", "P2C", "PXN", "PHB", "SYS", "NET", "DIS" };
 
@@ -444,6 +445,25 @@ ncclResult_t ncclTopoAddGin(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoAddRma(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* system, struct ncclTopoNode* nic, int systemId) {
+  int dev;
+  NCCLCHECK(xmlGetAttrInt(xmlNet, "dev", &dev));
+
+  int64_t netId = NCCL_TOPO_ID(systemId, dev);
+  struct ncclTopoNode* net;
+  NCCLCHECK(ncclTopoCreateNode(system, &net, RMA, netId));
+  net->net.dev = dev;
+
+  int mbps;
+  NCCLCHECKNOWARN(xmlGetAttrIntDefault(xmlNet, "speed", &mbps, 0), NCCL_GRAPH);
+  if (mbps <= 0) mbps = 10000; // Some NICs define speed = -1
+  net->net.bw = mbps / 8000.0;
+
+  NCCLCHECK(ncclTopoConnectNodes(nic, net, LINK_NET, net->net.bw));
+  NCCLCHECK(ncclTopoConnectNodes(net, nic, LINK_NET, net->net.bw));
+  return ncclSuccess;
+}
+
 
 ncclResult_t ncclTopoAddNic(struct ncclXmlNode* xmlNic, struct ncclTopoSystem* system, struct ncclTopoNode* nic, int systemId) {
   for (int s=0; s<xmlNic->nSubs; s++) {
@@ -455,11 +475,13 @@ ncclResult_t ncclTopoAddNic(struct ncclXmlNode* xmlNic, struct ncclTopoSystem* s
     if (index == -1) continue;
 
     // Backward compatibility: net withouh "net" attr is a net dev, net without a "gin" is not a gin dev
-    int net = 0, gin = 0;
+    int net = 0, gin = 0, rma = 0;
     NCCLCHECK(xmlGetAttrIntDefault(xmlNet, "net", &net, 1));
     NCCLCHECK(xmlGetAttrIntDefault(xmlNet, "gin", &gin, 0));
+    NCCLCHECK(xmlGetAttrIntDefault(xmlNet, "rma", &rma, 0));
     if (net) NCCLCHECK(ncclTopoAddNet(xmlNet, system, nic, systemId));
     if (gin) NCCLCHECK(ncclTopoAddGin(xmlNet, system, nic, systemId));
+    if (rma) NCCLCHECK(ncclTopoAddRma(xmlNet, system, nic, systemId));
   }
   return ncclSuccess;
 }
@@ -1070,6 +1092,7 @@ ncclResult_t ncclTopoMakeUniqueBusId(struct ncclXml* xml, char* busId, struct nc
   return ncclInternalError;
 }
 
+// Add a new PCI node with a unique busId under (*parent) and overwrite the value of (*parent) to point to the new node
 ncclResult_t ncclTopoMakePciParent(struct ncclXml* xml, struct ncclXmlNode** parent, struct ncclXmlNode* physNetNode) {
   struct ncclXmlNode* newBusId = NULL;
   struct ncclXmlNode* pci = physNetNode->parent;
@@ -1305,15 +1328,15 @@ ncclResult_t ncclTopoFindLinkWidthRec(ncclXmlNode* node, ncclXmlNode** physNetNo
   if (*foundPhysNet == 0) {
     // No child NICs were found, do not accrue any detected link_width
     *linkWidth = 0;
-    INFO(NCCL_GRAPH, "Did not find child net device. Returning link_width=%d totalChildLinkWidth=%d", *linkWidth, totalChildLinkWidth);
+    TRACE(NCCL_GRAPH, "Did not find child net device. Returning link_width=%d totalChildLinkWidth=%d", *linkWidth, totalChildLinkWidth);
   } else if (totalChildLinkWidth == 0) {
     // If A child NIC was found but no link_width was detected among children, assign the link_width to mine (I am the first pci node right above the physNetNode).
     *linkWidth = myLinkWidth;
-    INFO(NCCL_GRAPH, "Found child net device for %s. Returning link_width=%d totalChildLinkWidth=%d", node->name, *linkWidth, totalChildLinkWidth);
+    TRACE(NCCL_GRAPH, "Found child net device for %s. Returning link_width=%d totalChildLinkWidth=%d", node->name, *linkWidth, totalChildLinkWidth);
   } else {
   // Standard recursive accrual of link_width. The link_width is either the bottleneck of this PCI node's width or the sum of its children's width.
     *linkWidth = myLinkWidth > 0 ? std::min(myLinkWidth, totalChildLinkWidth) : totalChildLinkWidth;
-    INFO(NCCL_GRAPH, "Found child net device for %s. Returning link_width=%d totalChildLinkWidth=%d", node->name, *linkWidth, totalChildLinkWidth);
+    TRACE(NCCL_GRAPH, "Found child net device for %s. Returning link_width=%d totalChildLinkWidth=%d", node->name, *linkWidth, totalChildLinkWidth);
   }
 
   return ncclSuccess;
@@ -1336,28 +1359,6 @@ ncclResult_t ncclTopoFindLinkWidth(ncclXmlNode* parent, ncclXmlNode** physNetNod
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoWidenLinks(ncclXmlNode** physNetNodes, int ndevs, ncclXmlNode* parent) {
-  int sumLinkWidth = 0;
-  NCCLCHECK(ncclTopoFindLinkWidth(parent, physNetNodes, ndevs, &sumLinkWidth));
-  for (int i = 0; i < ndevs; i++) {
-    ncclXmlNode* temp = physNetNodes[i];
-    while (temp != parent) {
-      if (strcmp(temp->name, "pci") == 0) {
-        NCCLCHECK(xmlSetAttrInt(temp, "link_width", sumLinkWidth));
-        TRACE(NCCL_GRAPH, "Set link_width to %d for node %s", sumLinkWidth, temp->name);
-      }
-      temp = temp->parent;
-    }
-  }
-
-  if (strcmp(parent->name, "pci") == 0) {
-    NCCLCHECK(xmlSetAttrInt(parent, "link_width", sumLinkWidth));
-    TRACE(NCCL_GRAPH, "Set link_width to %d for node %s", sumLinkWidth, parent->name);
-  }
-
-  return ncclSuccess;
-}
-
 ncclResult_t ncclTopoGetVNicParent(struct ncclXml* xml, ncclResult_t (*getProperties)(int, ncclNetProperties_t*), ncclNetVDeviceProps_t* vProps, ncclXmlNode** parent) {
   ncclNetProperties_t props[NCCL_NET_MAX_DEVS_PER_NIC];
   ncclXmlNode* physNetNodes[NCCL_NET_MAX_DEVS_PER_NIC];
@@ -1371,23 +1372,36 @@ ncclResult_t ncclTopoGetVNicParent(struct ncclXml* xml, ncclResult_t (*getProper
 
   int path = PATH_LOC;
   NCCLCHECK(ncclTopoGetPath(physNetNodes, vProps->ndevs, &path, parent));
+  int aggregateWidth = 0;
   if (path == PATH_PHB || path == PATH_PXB || path == PATH_PIX) {
-    INFO(NCCL_GRAPH, "Widening links");
-    NCCLCHECK(ncclTopoWidenLinks(physNetNodes, vProps->ndevs, *parent));
+    NCCLCHECK(ncclTopoFindLinkWidth(*parent, physNetNodes, vProps->ndevs, &aggregateWidth));
   }
 
+  // If the common parent is a PCI switch or the CPU, we must reparent the new NIC under a made up pci device with a unique busid
+  // This adds a pci node between the physNetParent and the fused NIC.
+  struct ncclXmlNode* physNetParent = *parent;
   if (*parent) {
     if (strcmp((*parent)->name, "pci") == 0) {
       // Compare PCI class here to avoid NCCL WARN when the "class" attribute doesn't exist
       const char* c;
       NCCLCHECK(xmlGetAttrStr(*parent, "class", &c));
       if (c && strcmp(c, PCI_BRIDGE_DEVICE_CLASS) == 0) {
-        // If the common parent is a PCI switch, we must reparent the new NIC under a made up pci device with a unique busid
         NCCLCHECK(ncclTopoMakePciParent(xml, parent, physNetNodes[0]));
       }
     } else if (strcmp((*parent)->name, "cpu") == 0) {
-      // If the common parent is a PCI switch, we must reparent the new NIC under a made up pci device with a unique busid
+      // If the common parent is a CPU, we must reparent the new NIC under a made up pci device with a unique busid
       NCCLCHECK(ncclTopoMakePciParent(xml, parent, physNetNodes[0]));
+    }
+  }
+
+  // Update the speed for all the pci nodes between the parent and the physNetparent
+  if (aggregateWidth > 0) {
+    struct ncclXmlNode* node = *parent;
+    while (node) {
+      TRACE(NCCL_GRAPH, "Set link_width to %d for vNIC parent %s", aggregateWidth, (*parent)->name);
+      if (strcmp(node->name, "pci") == 0) NCCLCHECK(xmlSetAttrInt(node, "link_width", aggregateWidth));
+      if (node == physNetParent) break;
+      node = node->parent;
     }
   }
 
@@ -1465,13 +1479,15 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
     // Only set coll or gin if it's not 0
     if (netInfo->coll) NCCLCHECK(xmlInitAttrInt(netNode, "coll", netInfo->coll));
     if (netInfo->gin) NCCLCHECK(xmlInitAttrInt(netNode, "gin", netInfo->gin));
+    if (netInfo->rma) NCCLCHECK(xmlInitAttrInt(netNode, "rma", netInfo->rma));
 
-    const char *keepAttr, *ginAttr;
+    const char *keepAttr, *ginAttr, *rmaAttr;
     NCCLCHECK(xmlGetAttr(netNode, "net", &netAttr));
     NCCLCHECK(xmlGetAttr(netNode, "gin", &ginAttr));
+    NCCLCHECK(xmlGetAttr(netNode, "rma", &rmaAttr));
     NCCLCHECK(xmlGetAttr(netNode, "coll", &colAttr));
     NCCLCHECK(xmlGetAttr(netNode, "keep", &keepAttr));
-    INFO(NCCL_GRAPH, "ncclTopoPopulateNics : Filled %s in topo with pciPath=%s net=%s gin=%s keep=%s coll=%s rail=%d plane=%d", props.name, props.pciPath, netAttr, ginAttr, keepAttr, colAttr, props.railId, props.planeId);
+    INFO(NCCL_GRAPH, "ncclTopoPopulateNics : Filled %s in topo with pciPath=%s net=%s gin=%s rma=%s keep=%s coll=%s rail=%d plane=%d", props.name, props.pciPath, netAttr, ginAttr, rmaAttr, keepAttr, colAttr, props.railId, props.planeId);
   }
 
   return ncclSuccess;
@@ -1620,6 +1636,21 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
         netInfo.getProperties = gin->getProperties;
         netInfo.makeVDevice = NULL;
         netInfo.devices = gin->devices;
+        NCCLCHECKGOTO(ncclTopoProcessNet(xml, dumpXmlFile, &netInfo), ret, fail);
+      }
+      ncclRma_t* rma = comm->rmaState.rmaProxyState.ncclRma;
+      if (rma) {
+        netInfo.net = 0;
+        netInfo.coll = 0;
+        netInfo.gin = 0;
+        netInfo.rma = 1;
+        netInfo.netPluginIndex = comm->rmaPluginIndex;
+        netInfo.dmaBufSupport = comm->dmaBufSupport;
+        netInfo.getDevCount = ncclRmaGetDevCount;
+        netInfo.name = rma->name;
+        netInfo.getProperties = rma->getProperties;
+        netInfo.makeVDevice = NULL;
+        netInfo.devices = rma->devices;
         NCCLCHECKGOTO(ncclTopoProcessNet(xml, dumpXmlFile, &netInfo), ret, fail);
       }
       if (collNetSupport(comm)) {
@@ -1857,6 +1888,21 @@ ncclResult_t ncclTopoGetLocalGinDevs(struct ncclComm* comm, int* localGinDevs, i
     NCCLCHECK(ncclTopoGetLocalGinDev(comm->topo, comm->rank, c, NULL, localGinDevs+c));
     if (c > 0 && localGinDevs[c] == localGinDevs[0]) {
       *localGinCount = c;
+      break;
+    }
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoGetLocalRmaDev(struct ncclTopoSystem* system, int rank, int channelId, int64_t* id, int* dev) {
+  return ncclTopoGetLocalNetType(system, RMA, rank, channelId, id, dev);
+}
+
+ncclResult_t ncclTopoGetLocalRmaDevs(struct ncclComm* comm, int* localRmaDevs, int* localRmaCount) {
+  for (int c=0; c<NCCL_TOPO_MAX_NODES; c++) {
+    NCCLCHECK(ncclTopoGetLocalRmaDev(comm->topo, comm->rank, c, NULL, localRmaDevs+c));
+    if (c > 0 && localRmaDevs[c] == localRmaDevs[0]) {
+      *localRmaCount = c;
       break;
     }
   }

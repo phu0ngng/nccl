@@ -12,6 +12,8 @@
 - [NVL576: Cross Clique P2P IPC Support](items/id_80B28435/Cross-Clique_P2P_IPC_Support.md)
 - [Elastic_buffer_support_for_Device_APIs](items/id_1353E735/Elastic_buffer_support_for_Device_APIs.md)
 - [GPI for GIN](items/id_2037bbf0/GPI_for_GIN.md)
+- [Hier zero-sm collective](items/id_7b3e13f0/Hier_zero-sm_collective.md)
+- [GIN Fence Levels](items/id_85a494a5/GIN_Fence_Levels.md)
 <!-- V2_30_DO_NOT_MOVE -->
 
 <!------------------------------------->

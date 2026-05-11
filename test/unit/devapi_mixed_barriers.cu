@@ -18,7 +18,7 @@ __global__ void runDevice(ncclDevComm comm, ncclDevResourceHandle hGinDone) {
   {
     ncclGinBarrierSession<ncclCoopCta> ginBar(ncclCoopCta(), net, ncclTeamTagRail(), blockIdx.x);
     for (int round = 0; round < 10; round++) {
-      ginBar.sync(ncclCoopCta(), cuda::memory_order_relaxed, ncclGinFenceLevel::Relaxed);
+      ginBar.sync(ncclCoopCta(), cuda::memory_order_relaxed, ncclGinFenceLevel::None);
       if (t == 0 && blockIdx.x == 0 && world.rank == round % world.nRanks) {
         printf("GIN Round %d\n", round);
       }
@@ -33,7 +33,7 @@ __global__ void runDevice(ncclDevComm comm, ncclDevResourceHandle hGinDone) {
   {
     ncclBarrierSession<ncclCoopCta> bar(ncclCoopCta(), ncclTeamTagWorld(), net, blockIdx.x);
     for (int round = 0; round < 10; round++) {
-      bar.sync(ncclCoopCta(), cuda::memory_order_relaxed, ncclGinFenceLevel::Relaxed);
+      bar.sync(ncclCoopCta(), cuda::memory_order_relaxed, ncclGinFenceLevel::None);
       if (round == 0 && t == 0) {
         int done = atomicAdd(ginDone, 0);
         if (done != gridDim.x) {

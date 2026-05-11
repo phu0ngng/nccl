@@ -270,7 +270,6 @@ setup_nccl4py_cu13:
       srun \
       -p ${SLURM_PARTITION} \
       -J nccl4py-ci:$CI_COMMIT_SHORT_SHA:apitests:$NCCL4PY_CUDA_TARGET \
-      --export=ALL,NCCL_P2P_DISABLE=1,NCCL_IB_DISABLE=1 \
       -t ${SLURM_TIME} \
       -N ${NNODES} \
       --exclusive \
@@ -377,7 +376,6 @@ apitests_freethreading_cu12:
       srun \
       -p ${SLURM_PARTITION} \
       -J nccl4py-ci:$CI_COMMIT_SHORT_SHA:apitests-ft:$NCCL4PY_CUDA_TARGET \
-      --export=ALL,NCCL_P2P_DISABLE=1,NCCL_IB_DISABLE=1 \
       -t ${SLURM_TIME} \
       -N ${NNODES} \
       --exclusive \
@@ -420,7 +418,6 @@ apitests_freethreading_cu13:
       srun \
       -p ${SLURM_PARTITION} \
       -J nccl4py-ci:$CI_COMMIT_SHORT_SHA:apitests-ft:$NCCL4PY_CUDA_TARGET \
-      --export=ALL,NCCL_P2P_DISABLE=1,NCCL_IB_DISABLE=1 \
       -t ${SLURM_TIME} \
       -N ${NNODES} \
       --exclusive \

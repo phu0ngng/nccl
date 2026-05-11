@@ -93,7 +93,7 @@ __global__ void GinBarrierWithTimeoutKernel(struct ncclDevComm devComm) {
   ncclGinBarrierSession<ncclCoopCta> bar { ncclCoopCta(), gin, ncclTeamTagWorld(), blockIdx.x };
   CHECK_TIMEOUT(bar.sync(ncclCoopCta(),
    cuda::memory_order_relaxed,
-   ncclGinFenceLevel::Relaxed,
+   ncclGinFenceLevel::None,
    TIMEOUT_CYCLES), devComm.rank, "GIN barrier normal");
 }
 
@@ -108,7 +108,7 @@ __global__ void GinBarrierReturnForTimeoutKernel(struct ncclDevComm devComm) {
 
   CHECK_TIMEOUT(bar.sync(ncclCoopCta(),
    cuda::memory_order_relaxed,
-   ncclGinFenceLevel::Relaxed,
+   ncclGinFenceLevel::None,
    TIMEOUT_CYCLES), devComm.rank, "GIN barrier timeout");
 }
 
@@ -166,7 +166,7 @@ __global__ void BarrierWithTimeoutKernel(struct ncclDevComm devComm) {
   ncclBarrierSession<ncclCoopCta> bar { ncclCoopCta(), ncclTeamTagWorld(), gin, blockIdx.x };
   CHECK_TIMEOUT(bar.sync(ncclCoopCta(),
    cuda::memory_order_relaxed,
-   ncclGinFenceLevel::Relaxed,
+   ncclGinFenceLevel::None,
    TIMEOUT_CYCLES), devComm.rank, "Barrier normal");
 }
 
@@ -182,7 +182,7 @@ __global__ void BarrierReturnForTimeoutKernel(struct ncclDevComm devComm) {
 
   CHECK_TIMEOUT(bar.sync(ncclCoopCta(),
    cuda::memory_order_relaxed,
-   ncclGinFenceLevel::Relaxed,
+   ncclGinFenceLevel::None,
    TIMEOUT_CYCLES), devComm.rank, "Barrier timeout");
 }
 
