@@ -1,5 +1,7 @@
 #include <cstddef>
 #include "nccl_device.h"
+#include "nccl_device/gin/gdaki/gin_gdaki_device_host_common.h"
+#include "nccl_device/gin/proxy/gin_proxy_device_host_common.h"
 
 // These tests are designed to catch backwards incompatible changes to Device API structs.
 // The tests do not run; compilation catches any issues.
@@ -146,6 +148,44 @@ void ncclDevCommRequirements_backwards_compat_test() {
 
   // This check prompts users to update the test. Edit according to the instructions above.
   static_assert(sizeof(ncclGinConnectionType_t) == 4);
+}
+
+void ncclGinGdakiGPUContext_backwards_compat_test() {
+  // ncclGinGdakiGlobalGPUBufferTable<uint64_t> is embedded in the context; its layout must remain stable.
+  static_assert(offsetof(ncclGinGdakiGlobalGPUBufferTable<uint64_t>, buffer) == 0);
+  static_assert(offsetof(ncclGinGdakiGlobalGPUBufferTable<uint64_t>, rkeys) == 8);
+  static_assert(offsetof(ncclGinGdakiGlobalGPUBufferTable<uint64_t>, lkey) == 16);
+  static_assert(offsetof(ncclGinGdakiGlobalGPUBufferTable<uint64_t>, offset) == 20);
+  static_assert(sizeof(ncclGinGdakiGlobalGPUBufferTable<uint64_t>) == 24);
+
+  static_assert(offsetof(ncclGinGdakiGPUContext, gdqp) == 0);
+  static_assert(offsetof(ncclGinGdakiGPUContext, companion_gdqp) == 8);
+  static_assert(offsetof(ncclGinGdakiGPUContext, counters_table) == 16);
+  static_assert(offsetof(ncclGinGdakiGPUContext, signals_table) == 40);
+  static_assert(offsetof(ncclGinGdakiGPUContext, sink_buffer_lkey) == 64);
+  static_assert(offsetof(ncclGinGdakiGPUContext, last_issued_get) == 72);
+  static_assert(offsetof(ncclGinGdakiGPUContext, last_visible_get) == 80);
+
+  // This check prompts users to update the test. This struct REQUIRES a new compat layer
+  // each time the size or offsets change.
+  static_assert(sizeof(ncclGinGdakiGPUContext) == 88);
+}
+
+void ncclGinProxyGpuCtx_backwards_compat_test() {
+  static_assert(offsetof(ncclGinProxyGpuCtx_t, nranks) == 0);
+  static_assert(offsetof(ncclGinProxyGpuCtx_t, queueSize) == 4);
+  static_assert(offsetof(ncclGinProxyGpuCtx_t, queues) == 8);
+  static_assert(offsetof(ncclGinProxyGpuCtx_t, pis) == 16);
+  static_assert(offsetof(ncclGinProxyGpuCtx_t, cis) == 24);
+  static_assert(offsetof(ncclGinProxyGpuCtx_t, counters) == 32);
+  static_assert(offsetof(ncclGinProxyGpuCtx_t, signals) == 40);
+  static_assert(offsetof(ncclGinProxyGpuCtx_t, signalOffsets) == 48);
+  static_assert(offsetof(ncclGinProxyGpuCtx_t, lastIssuedGet) == 56);
+  static_assert(offsetof(ncclGinProxyGpuCtx_t, lastVisibleGet) == 64);
+
+  // This check prompts users to update the test. This struct REQUIRES a new compat layer
+  // each time the size or offsets change.
+  static_assert(sizeof(ncclGinProxyGpuCtx_t) == 72);
 }
 
 void ncclCommProperties_backwards_compat_test() {
