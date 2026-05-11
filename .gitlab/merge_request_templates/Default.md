@@ -14,5 +14,10 @@ Can be up to 4-5 lines or longer, but please don't be overly verbose and make su
 ## Testing
 What testing was done? How was it verified?
 
+## Release notes
+(Optional.) This serves as a base when compiling the release notes.
+If you feel this should be mentioned then you can add a tentative text here. Otherwise
+indicate it should not be mentioned.
+
 ## Tracking
 Require a nvbugs, Jira or GitHub issue to track the code change.
