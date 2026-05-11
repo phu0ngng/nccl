@@ -1,2 +1,2 @@
-requests
-simple-term-menu
+requests==2.33.1
+simple-term-menu==1.6.6
