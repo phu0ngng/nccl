@@ -219,6 +219,11 @@ void fakeNetPluginAddNetNode(struct ncclXmlNode* node) {
   if (attr) dev->gdr = strtol(attr, NULL, 0);
   xmlGetAttr(node, "maxconn", &attr);
   if (attr) dev->maxConns = strtol(attr, NULL, 0);
+  int railId, planeId;
+  CHECK(xmlGetAttrIntDefault(node, "rail", &railId, NCCL_NET_ID_UNDEF));
+  CHECK(xmlGetAttrIntDefault(node, "plane", &planeId, NCCL_NET_ID_UNDEF));
+  props->railId = railId;
+  props->planeId = planeId;
   dev->ignore = 0;
 
   // get the busId of the first PCI parent
@@ -265,6 +270,8 @@ void fakeNetPluginInit(struct ncclXml* xmlSystem, const struct testParam* param)
       dev->ignore = 1;
       props->name = dev->name;
       props->speed = 1;
+      props->railId = NCCL_NET_ID_UNDEF;
+      props->planeId = NCCL_NET_ID_UNDEF;
     }
   }
 }
