@@ -119,7 +119,7 @@ if [[ ${FT_TESTS_NO_P2P} -eq 1 ]] ; then
   run_command "ft_test_no_p2p" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV" "$NCCL_HOME/test/unit/ft_test" "-d float"
   if [[ ${FT_TESTS_WINREG_DISABLE} -ne 1 ]] ; then
     run_command "ft_test_no_p2p_reg_local" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV" "$NCCL_HOME/test/unit/ft_test" "-R 1 -d float"
-    run_command "ft_test_no_p2p_reg_symm" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV" "$NCCL_HOME/test/unit/ft_test" "-R 2 -d float"
+    run_command "ft_test_no_p2p_reg_symm" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV NCCL_NUM_RMA_CTX=0" "$NCCL_HOME/test/unit/ft_test" "-R 2 -d float"  # NVBUG 6159332
   else
     echo -e "Disabled no_p2pFT TESTS with window registration\n\n"
   fi
@@ -133,7 +133,7 @@ if [[ ${FT_TESTS_NETWORK} -eq 1 ]] ; then
   run_command "ft_test_network" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV" "$NCCL_HOME/test/unit/ft_test" "-d float"
   if [[ ${FT_TESTS_WINREG_DISABLE} -ne 1 ]] ; then
     run_command "ft_test_network_reg_local" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV" "$NCCL_HOME/test/unit/ft_test" "-R 1 -d float"
-    run_command "ft_test_network_reg_symm" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV" "$NCCL_HOME/test/unit/ft_test" "-R 2 -d float"
+    run_command "ft_test_network_reg_symm" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV NCCL_NUM_RMA_CTX=0" "$NCCL_HOME/test/unit/ft_test" "-R 2 -d float"  # NVBUG 6159332
   else
     echo -e "Disabled network FT TESTS with window registration\n\n"
   fi
