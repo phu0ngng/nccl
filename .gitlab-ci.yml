@@ -2269,6 +2269,46 @@ apitest-ipp6-a100:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+backwards-compat-api:
+  stage: api_tests
+  extends:
+    - .ipp6-a100
+  rules:
+    - <<: *post_submit_rule
+    - <<: *pre_submit_core_rule
+    - if: $RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-ipp6
+  parallel:
+    matrix:
+      - COMPAT_VERSION: ["2.30.4"]
+  variables:
+    SLURM_TIME: 30
+    NNODES: 1
+    NP: 1
+    NCCL_TEST_DIR: "/storage/toolkits/nccl/$COMPAT_VERSION/test" # This is an override to use the backwards compat test binaries as opposed to $NCCL_HOME/test
+    API_TESTS_DEFAULT: 0 # non-device apitests do not have backwards compat binaries setup
+    API_TESTS_NO_P2P: 0
+    API_TESTS_NETWORK: 0
+    API_TESTS_RMA: 0
+    API_TESTS_DEVICE_API: 1
+    DEV_API_NO_SKIP: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::backwards-compat-api::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
 apitest-dgxspark:
   stage: api_tests
   extends:

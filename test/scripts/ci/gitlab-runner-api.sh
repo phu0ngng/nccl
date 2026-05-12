@@ -11,7 +11,8 @@ get_slurm_planned_time
 
 nvidia-smi
 
-export LD_LIBRARY_PATH=$NCCL_HOME/test/apitest/plugin:$LD_LIBRARY_PATH
+export NCCL_TEST_DIR=${NCCL_TEST_DIR:-${NCCL_HOME}/test}
+export LD_LIBRARY_PATH=$NCCL_TEST_DIR/apitest/plugin:$LD_LIBRARY_PATH
 
 # argument list: testPrefix, gtest_filter
 run_api_test(){
@@ -19,20 +20,20 @@ run_api_test(){
     # Args for run_command
     # run_command "label" "run_mode" "ppn" "test_mpi_flags" "test_env_vars" "binary" "args"
     if [[ ${API_TESTS_DEFAULT} -eq 1 ]] ; then
-      run_command "apitest_${1}default" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/apitest/apitest --gtest_filter=${2}" ""
+      run_command "apitest_${1}default" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_TEST_DIR/apitest/apitest --gtest_filter=${2}" ""
     else
       echo -e "Disabled Api TESTS Default test\n\n"
     fi
 
     # NvBug 5210770
     if [[ ${API_TESTS_NO_P2P} -eq 1 ]] ; then
-      run_command "apitest_${1}no_p2p" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1" "$NCCL_HOME/test/apitest/apitest --gtest_filter=${2}" ""
+      run_command "apitest_${1}no_p2p" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1" "$NCCL_TEST_DIR/apitest/apitest --gtest_filter=${2}" ""
     else
       echo -e "Disabled Api TESTS no_p2p test\n\n"
     fi
 
     if [[ ${API_TESTS_NETWORK} -eq 1 ]] ; then
-      run_command "apitest_${1}no_p2p_no_shm" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1" "$NCCL_HOME/test/apitest/apitest --gtest_filter=${2}" ""
+      run_command "apitest_${1}no_p2p_no_shm" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1" "$NCCL_TEST_DIR/apitest/apitest --gtest_filter=${2}" ""
     else
       echo -e "Disabled Api TESTS network test\n\n"
     fi
@@ -40,14 +41,14 @@ run_api_test(){
 
 run_device_api_test(){
     if [[ ${API_TESTS_DEVICE_API} -eq 1 ]] ; then
-      run_command "device_apitest_gin_cpu_proxy" "$RUN_MODE" 1 "--oversubscribe" "NCCL_GIN_TYPE=2" "$NCCL_HOME/test/apitest/device_api/device_api_test --gtest_filter=-*ReduceCopy*" ""
-      run_command "device_apitest_gin_gdaki_sm" "$RUN_MODE" 1 "--oversubscribe" "NCCL_GIN_TYPE=3 NCCL_GIN_GDAKI_NIC_HANDLER=2" "$NCCL_HOME/test/apitest/device_api/device_api_test --gtest_filter=-*ReduceCopy*" ""
-      run_command "device_apitest_gin_gdaki_cpu_assisted" "$RUN_MODE" 1 "--oversubscribe" "NCCL_GIN_TYPE=3 NCCL_GIN_GDAKI_NIC_HANDLER=1" "$NCCL_HOME/test/apitest/device_api/device_api_test --gtest_filter=-*ReduceCopy*" ""
+      run_command "device_apitest_gin_cpu_proxy" "$RUN_MODE" 1 "--oversubscribe" "NCCL_GIN_TYPE=2" "$NCCL_TEST_DIR/apitest/device_api/device_api_test --gtest_filter=-*ReduceCopy*" ""
+      run_command "device_apitest_gin_gdaki_sm" "$RUN_MODE" 1 "--oversubscribe" "NCCL_GIN_TYPE=3 NCCL_GIN_GDAKI_NIC_HANDLER=2" "$NCCL_TEST_DIR/apitest/device_api/device_api_test --gtest_filter=-*ReduceCopy*" ""
+      run_command "device_apitest_gin_gdaki_cpu_assisted" "$RUN_MODE" 1 "--oversubscribe" "NCCL_GIN_TYPE=3 NCCL_GIN_GDAKI_NIC_HANDLER=1" "$NCCL_TEST_DIR/apitest/device_api/device_api_test --gtest_filter=-*ReduceCopy*" ""
       if [[ "${GIN_TESTS_GPI}" -eq 1 ]] ; then
-        run_command "device_apitest_gin_gpi" "$RUN_MODE" 1 "--oversubscribe" "NCCL_GIN_TYPE=4 NCCL_NET_PLUGIN=$SPCX_PLUGIN" "$NCCL_HOME/test/apitest/device_api/device_api_test --gtest_filter=-*ReduceCopy*:Test/GinGet_test.get/2GB:Test/GinGet_test.get_with_flush/2GB" ""
+        run_command "device_apitest_gin_gpi" "$RUN_MODE" 1 "--oversubscribe" "NCCL_GIN_TYPE=4 NCCL_NET_PLUGIN=$SPCX_PLUGIN" "$NCCL_TEST_DIR/apitest/device_api/device_api_test --gtest_filter=-*ReduceCopy*:Test/GinGet_test.get/2GB:Test/GinGet_test.get_with_flush/2GB" ""
       fi
-      run_command "device_apitest_gin_default" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/apitest/device_api/device_api_test --gtest_filter=-*ReduceCopy*" ""
-
+      run_command "device_apitest_gin_default" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_TEST_DIR/apitest/device_api/device_api_test --gtest_filter=-*ReduceCopy*" ""
+      
     else
       echo -e "Disabled Api TESTS device api test\n\n"
     fi
