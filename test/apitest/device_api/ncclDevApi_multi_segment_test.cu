@@ -20,6 +20,14 @@
 static const int numSegments = 16;
 static const size_t segmentSize = 2 * 1024 * 1024;
 
+// Multi-segment GIN registration requires DMABUF support on every GIN connection.
+// Set API_TESTS_SKIP_NO_DMABUF=1 on platforms where the GIN plugin lacks DMABUF
+// support (e.g. AWS H100 EFA) to skip the test.
+static TestResult_t apiTestsSkipNoDmabuf() {
+  const char* env = getenv("API_TESTS_SKIP_NO_DMABUF");
+  return (env && strcmp(env, "1") == 0) ? TestResult_t::testSkipped : TestResult_t::testSuccess;
+}
+
 static size_t getTotalSizeForConfig(const segment_descriptor_t* descriptors, int n) {
   size_t total = 0;
   for (int i = 0; i < n; i++) total += descriptors[i].segment_size;
@@ -544,6 +552,8 @@ TEST_F(ncclDevApi_multi_segment_test, LSA_allreduce_16_segments) {
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST_F(ncclDevApi_multi_segment_test, GIN_alltoall_16_gpu_segments) {
+  TESTCHECK(apiTestsSkipNoDmabuf());
+
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.worldGinBarrierCount = ginCtaCount;
   reqs.ginSignalCount = 1;
@@ -560,6 +570,8 @@ TEST_F(ncclDevApi_multi_segment_test, GIN_alltoall_16_gpu_segments) {
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST_F(ncclDevApi_multi_segment_test, GIN_alltoall_16_segments) {
+  TESTCHECK(apiTestsSkipNoDmabuf());
+
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.worldGinBarrierCount = lsaCtaCount;
   reqs.ginSignalCount = 1;
@@ -576,6 +588,8 @@ TEST_F(ncclDevApi_multi_segment_test, GIN_alltoall_16_segments) {
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST_F(ncclDevApi_multi_segment_test, GIN_get_alltoall_16_segments) {
+  TESTCHECK(apiTestsSkipNoDmabuf());
+
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.worldGinBarrierCount = lsaCtaCount;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
@@ -591,6 +605,8 @@ TEST_F(ncclDevApi_multi_segment_test, GIN_get_alltoall_16_segments) {
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST_F(ncclDevApi_multi_segment_test, GIN_alltoall_16_host_segments) {
+  TESTCHECK(apiTestsSkipNoDmabuf());
+
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.worldGinBarrierCount = lsaCtaCount;
   reqs.ginSignalCount = 1;
@@ -607,6 +623,8 @@ TEST_F(ncclDevApi_multi_segment_test, GIN_alltoall_16_host_segments) {
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST_F(ncclDevApi_multi_segment_test, GIN_get_alltoall_16_host_segments) {
+  TESTCHECK(apiTestsSkipNoDmabuf());
+
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.worldGinBarrierCount = lsaCtaCount;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
@@ -621,6 +639,7 @@ TEST_F(ncclDevApi_multi_segment_test, GIN_get_alltoall_16_host_segments) {
 // Test case: registration must fail when segment sizes differ across ranks
 ////////////////////////////////////////////////////////////////////////////////
 TEST_F(ncclDevApi_multi_segment_test, registration_fails_mismatched_segment_sizes) {
+  TESTCHECK(apiTestsSkipNoDmabuf());
 
   // GIN must be enabled so symMemoryRegisterGin runs the cross-rank validation.
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;

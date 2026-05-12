@@ -2053,6 +2053,10 @@ apitest-AWS-H100-EFA:
 
       # API test variables
       export NCCL_NVLS_ENABLE=0
+      # EFA GIN plugin lacks DMABUF on this system, so we set API_TESTS_SKIP_NO_DMABUF
+      # so that tests that depend on dmabuf support can be skipped. See BUG 6159332 #18
+      # for more details.
+      export API_TESTS_SKIP_NO_DMABUF=1
       export API_TESTS_DEFAULT=$API_TESTS_DEFAULT
       export API_TESTS_NO_P2P=$API_TESTS_NO_P2P
       export API_TESTS_NETWORK=$API_TESTS_NETWORK
