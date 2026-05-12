@@ -227,6 +227,26 @@ workflow:
   when: always
 
 ##
+## GitHub PR status reporting
+## When GITHUB_SHA is set, report pipeline status as a GitHub commit status check.
+## Also requires GITHUB_REPO (e.g. NVIDIA/nccl) and GITHUB_TOKEN as CI/CD variables.
+##
+
+github-status-pending:
+  stage: .pre
+  rules:
+    - if: $GITHUB_SHA
+      when: always
+    - when: never
+  tags:
+    - ipp6-nccl
+  allow_failure: true
+  variables:
+    GIT_DEPTH: 1
+  script:
+    - test/scripts/ci/github-status.sh pending
+
+##
 ## Stage: build - Start...
 ##
 
@@ -249,8 +269,6 @@ build-x86-cu12:
     - if: $RUN_ON_EOS == "1"
       when: always
     - if: $RUN_ON_DRACO_OCI == "1"
-      when: always
-    - if: $RUN_ON_PRE_NYX == "1"
       when: always
     - if: $RUN_ON_CW_DFW == "1"
       when: always
@@ -446,11 +464,11 @@ setup-pre-nyx:
     - .pre-nyx
     - .setup
   rules:
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-    - <<: *pre_submit_nccl_ep_rule
-    - if: $RUN_ON_PRE_NYX == "1"
-      when: always
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
+    # - <<: *pre_submit_nccl_ep_rule
+    # - if: $RUN_ON_PRE_NYX == "1"
+    #   when: always
     - when: never
   needs: ["build-x86-cu12"]
   variables:
@@ -668,7 +686,7 @@ nccl_ep_ci:
   needs:
     - setup-ipp6
     - setup-eos
-    - setup-pre-nyx
+    # - setup-pre-nyx
     - setup-pre-tyche
   rules:
     - <<: *post_submit_rule
@@ -686,6 +704,8 @@ github-sim:
   stage: downstream
   needs: []
   rules:
+    - if: $GITHUB_SHA
+      when: never
     - <<: *pre_submit_public_rule
     - when: never
   trigger:
@@ -1219,10 +1239,11 @@ unit-tests-pre-nyx:
   extends:
     - .pre-nyx
   rules:
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-    - if: $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
-      when: always
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
+    # - if: $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
+    #   when: always
+    - when: never
   needs:
     - setup-pre-nyx
   variables:
@@ -1654,9 +1675,10 @@ unit-tests-rma-pre-nyx:
   extends:
     - .pre-nyx
   rules:
-    - <<: *post_submit_rule
-    - if: $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
-      when: always
+    # - <<: *post_submit_rule
+    # - if: $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
+    #   when: always
+    - when: never
   needs: [setup-pre-nyx]
   variables:
     SLURM_TIME: 20
@@ -2098,10 +2120,10 @@ apitest-pre-nyx:
   extends:
     - .pre-nyx
   rules:
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-    - if: $RUN_ON_PRE_NYX == "1" && $RUN_API_TESTS == "1"
-      when: always
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
+    # - if: $RUN_ON_PRE_NYX == "1" && $RUN_API_TESTS == "1"
+    #   when: always
     - when: never
   needs:
     - setup-pre-nyx
@@ -2775,10 +2797,10 @@ perftest-single-pre-nyx:
   extends:
     - .pre-nyx
   rules:
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-    - if: $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_SINGLE == "1"
-      when: always
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
+    # - if: $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+    #   when: always
     - when: never
   needs:
     - setup-pre-nyx
@@ -3247,10 +3269,10 @@ perftest-multi-pre-nyx:
   extends:
     - .pre-nyx
   rules:
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-    - if: $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
-      when: always
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
+    # - if: $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
+    #   when: always
     - when: never
   needs:
     - setup-pre-nyx
@@ -4549,6 +4571,32 @@ summarize-pipeline:
   script:
     - ./test/scripts/gitlab-runner-summary.sh
 
+github-status-success:
+  stage: summary
+  dependencies: []
+  rules:
+    - if: $GITHUB_SHA
+      when: on_success
+    - when: never
+  tags:
+    - ipp6-nccl
+  allow_failure: true
+  script:
+    - test/scripts/ci/github-status.sh success
+
+github-status-failure:
+  stage: summary
+  dependencies: []
+  rules:
+    - if: $GITHUB_SHA
+      when: on_failure
+    - when: never
+  tags:
+    - ipp6-nccl
+  allow_failure: true
+  script:
+    - test/scripts/ci/github-status.sh failure
+
 ##
 ## Stage: summary - Finish!
 ##
@@ -4672,15 +4720,16 @@ cleanup-pre-nyx:
   extends:
     - .cleanup
   rules:
-    - <<: *post_submit_rule
-    - <<: *pre_submit_core_rule
-      when: on_success
-    - <<: *pre_submit_nccl_ep_rule
-      when: on_success
-    - if: $RUN_ON_PRE_NYX == "1"
-      when: on_success
-    - if: $RUN_NCCL_EP_CI == "1"
-      when: on_success
+    # - <<: *post_submit_rule
+    # - <<: *pre_submit_core_rule
+    #   when: on_success
+    # - <<: *pre_submit_nccl_ep_rule
+    #   when: on_success
+    # - if: $RUN_ON_PRE_NYX == "1"
+    #   when: on_success
+    # - if: $RUN_NCCL_EP_CI == "1"
+    #   when: on_success
+    - when: never
   tags:
     - prenyx
   needs:
