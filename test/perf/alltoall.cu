@@ -159,6 +159,20 @@ testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequireme
       reqs->ginForceEnable = true;
 #endif
       return testSuccess;
+    case 6: // HierAlltoAllKernel (LSA+GIN)
+      if (commProperties.railedGinType == NCCL_GIN_TYPE_NONE) {
+        *testSkipReason = "This test requires Rail GIN support, but it is not enabled for this communicator.\n";
+        return testSkipped;
+      }
+      reqs->ginContextCount = deviceCtaCount;
+      reqs->barrierCount = deviceCtaCount;
+      reqs->ginSignalCount = deviceCtaCount*2*ncclTeamRail(comm).nRanks;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2, 29, 3)
+      reqs->ginConnectionType = NCCL_GIN_CONNECTION_RAIL;
+#else
+      reqs->ginForceEnable = true;
+#endif
+      return testSuccess;
     default:
       return testNotImplemented;
   }
@@ -419,6 +433,101 @@ __global__ void GinAlltoAllKernelMultiContext(ncclWindow_t sendwin, size_t sendo
   bar.sync(ncclCoopCta(), cuda::memory_order_release, ncclGinFenceLevel::None);
 #endif
 }
+
+// Hierarchical rail-only alltoall
+// Each rank uses its receive buffer as intermediate buffer to receive from all other ranks
+// on the same rail, then pipelines data to other ranks on the same LSA domain, finishing by
+// its own data (which doesn't need to be copied).
+// Latency is fairly high with large LSA domains because we need N consecutive rounds. To
+// improve latency, we would need to use some scratch space to allow for all data to be sent
+// at once.
+template <typename T>
+__global__ void HierAlltoAllKernel(ncclWindow_t sendWin, size_t sendoffset, ncclWindow_t recvWin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
+#if __CUDA_ARCH__ >= 700 // required for ncclLocalCopy
+  int ginContext = blockIdx.x % devComm.ginContextCount;
+  ncclGin gin { devComm, ginContext };
+  int tid = threadIdx.x;
+  int nthreads = blockDim.x;
+
+  ncclBarrierSession<ncclCoopCta> bar { ncclCoopCta(), ncclTeamTagWorld(), gin, blockIdx.x };
+  bar.sync(ncclCoopCta(), cuda::memory_order_acquire, ncclGinFenceLevel::None);
+
+  ncclTeam ginTeam = ncclTeamRail(devComm);
+  ncclTeam lsaTeam = ncclTeamLsa(devComm);
+  unsigned int signalSendBase = blockIdx.x*ginTeam.nRanks;
+  unsigned int signalRecvBase = (gridDim.x + blockIdx.x)*ginTeam.nRanks;
+
+  // Divide work on the different CTAs
+  size_t size = count * sizeof(T);
+  ssize_t blockSize = (size+gridDim.x-1) / gridDim.x;
+  const size_t offset = blockSize * blockIdx.x;
+  if (blockSize + offset > size) blockSize = size - offset;
+  if (blockSize <= 0) return;
+  const size_t winRecvOffset = recvoffset + offset;
+  const size_t winSendOffset = sendoffset + offset;
+
+  if (tid < 32) {
+    // First warp drives sends
+    for (int li = lsaTeam.nRanks-1; li >= 0; li--) {
+      int lsaRank = (lsaTeam.rank + li) % lsaTeam.nRanks;
+      for (int gi = 1+tid; gi < ginTeam.nRanks; gi+=32) {
+        int gSendPeer = (ginTeam.rank + gi) % ginTeam.nRanks;
+        // Wait for credit
+        gin.waitSignalMeetShadow(ncclCoopThread(), signalRecvBase+gSendPeer);
+        // Write to peer
+        int sendPeer = gSendPeer * lsaTeam.nRanks + lsaRank;
+        size_t sendOffset = sendPeer * size;
+        size_t recvOffset = devComm.rank * size;
+        gin.put(ginTeam, gSendPeer,
+            recvWin, recvOffset+winRecvOffset,
+            sendWin, sendOffset+winSendOffset,
+            blockSize, ncclGin_SignalInc{signalSendBase+ginTeam.rank});
+        // Block next send until we receive ack
+        if (li) gin.increaseSignalShadow(signalRecvBase+gSendPeer, 1);
+      }
+    }
+  } else {
+    // Other workers receive, copy through LSA, and return credits.
+    ncclCoopWarpSpan workers(1, nthreads/32 - 1, 1);
+    for (int li = lsaTeam.nRanks-1; li >= 0; li--) {
+      int lsaRank = (lsaTeam.rank + li) % lsaTeam.nRanks;
+
+      // First handle the local LSA copy (our rank -> local ranks, including to ourself)
+      // This should cover the time to receive the first chunk.
+      int nodeFirstRank = ginTeam.rank * lsaTeam.nRanks;
+      size_t sendOffset = (nodeFirstRank + lsaRank) * size;
+      char* source = (char*)ncclGetLocalPointer(sendWin, sendOffset+winSendOffset);
+      size_t recvOffset = (nodeFirstRank + lsaTeam.rank) * size;
+      char* dstPtr = (char*)ncclGetLsaPointer(recvWin, recvOffset+winRecvOffset, lsaRank);
+      ncclLocalCopy(workers, source, 1, dstPtr, 0, blockSize);
+
+      // Then receive from the network
+      for (int gi = 1; gi < ginTeam.nRanks; gi++) {
+        int gRecvPeer = (ginTeam.rank - gi + ginTeam.nRanks) % ginTeam.nRanks;
+        // Recv from peer
+        if (workers.thread_rank() == 0) {
+          gin.increaseSignalShadow(signalSendBase+gRecvPeer, 1);
+          gin.waitSignalMeetShadow(ncclCoopThread(), signalSendBase+gRecvPeer);
+        }
+        workers.sync();
+        // On the last round, lsaRank should be ourself. No need to copy, nor return credits.
+        if (li) {
+          // Copy chunk through LSA
+          size_t recvOffset = (gRecvPeer * lsaTeam.nRanks + lsaTeam.rank) * size;
+          char* source = (char*)ncclGetLocalPointer(recvWin, recvOffset+winRecvOffset);
+          char* dstPtr = (char*)ncclGetLsaPointer(recvWin, recvOffset+winRecvOffset, lsaRank);
+          ncclLocalCopy(workers, source, 1, dstPtr, 0, blockSize);
+          // Ack recv (return credit)
+          if (workers.thread_rank() == 1) {
+            gin.signal(ginTeam, gRecvPeer, ncclGin_SignalInc{signalRecvBase+ginTeam.rank});
+          }
+        }
+      }
+    }
+  }
+  bar.sync(ncclCoopCta(), cuda::memory_order_release, ncclGinFenceLevel::None);
+#endif // ARCH >= 700
+}
 #endif // !defined(NCCL_OS_WINDOWS)
 #endif
 
@@ -459,6 +568,9 @@ testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, 
         return testSuccess;
       case 5:
         TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(GinAlltoAllKernelMultiContext, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+        return testSuccess;
+      case 6:
+        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(HierAlltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
         return testSuccess;
 #endif // !defined(NCCL_OS_WINDOWS)
 
