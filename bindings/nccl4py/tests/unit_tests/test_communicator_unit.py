@@ -526,8 +526,9 @@ def test_nccl_config_struct_layout():
         ('graph_usage_mode',          np.int32,   80,       4),
         ('num_rma_ctx',               np.int32,   84,       4),
         ('max_p2p_peers',             np.int32,   88,       4),
+        ('graph_stream_ordering',     np.int32,   92,       4),
     ]
-    expected_total_size = 96  # 92 bytes + 4 padding for 8-byte alignment
+    expected_total_size = 96  # exactly 96 bytes, already 8-byte aligned
 
     # Verify struct size
     assert dtype.itemsize == expected_total_size, \
@@ -749,7 +750,8 @@ def test_nccl_dev_comm_requirements_struct_layout():
     #   int ginTrafficClass;                          // int32: offset 84, size 4
     #   int worldGinBarrierCount;                     // int32: offset 88, size 4
     #   bool ginStrongSignalsRequired;                // uint8: offset 92, size 1
-    #   // [trailing padding 3 bytes for size_t (8-byte) alignment]
+    #   bool ginVaSignalsRequired;                    // uint8: offset 93, size 1
+    #   // [trailing padding 2 bytes for size_t (8-byte) alignment]
     # }
     expected_layout = [
         # field_name                     type        offset    size
@@ -777,7 +779,8 @@ def test_nccl_dev_comm_requirements_struct_layout():
         ('gin_traffic_class',            np.int32,   84,       4),
         ('world_gin_barrier_count',      np.int32,   88,       4),
         ('gin_strong_signals_required',  np.uint8,   92,       1),
-        # 3 bytes trailing padding to round up to 8-byte alignment of size_t
+        ('gin_va_signals_required',      np.uint8,   93,       1),
+        # 2 bytes trailing padding to round up to 8-byte alignment of size_t
     ]
     expected_total_size = 96
 
