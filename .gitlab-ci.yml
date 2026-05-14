@@ -2936,7 +2936,6 @@ perftest-single-dgxspark:
     - .dgxspark
   rules:
     # - <<: *post_submit_rule
-    # - <<: *pre_submit_core_rule
     # - if: $RUN_ON_DGXSPARK == "1" && $RUN_PERF_TESTS_SINGLE == "1"
     #   when: always
     - when: never
@@ -3401,6 +3400,38 @@ perftest-multi-ipp6-a100:
     MAX: "1G"
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::perftest-multi-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+perftest-multi-dgxspark:
+  stage: perf_tests_multi
+  extends:
+    - .dgxspark-dual
+  rules:
+    - <<: *post_submit_rule
+    - if: $RUN_ON_DGXSPARK == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-dgxspark
+  variables:
+    SLURM_TIME: 30
+    NNODES: 2
+    GRAPH: 0
+    NP: 1
+    SYMMETRIC: 1
+    MAX: "1G"
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}:perftest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
@@ -5018,6 +5049,8 @@ cleanup-dgxspark:
     - job: apitest-dgxspark
       optional: true
     - job: perftest-single-dgxspark
+      optional: true
+    - job: perftest-multi-dgxspark
       optional: true
   variables:
     INSTALL_DIR: "${DGXSPARK_INSTALL_DIR}"

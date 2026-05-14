@@ -90,6 +90,12 @@ variables:
     NGPUS: 1
     SLURM_PARTITION: dgxspark
 
+.dgxspark-dual:
+  extends:
+    - .dgxspark
+  variables:
+    SLURM_PARTITION: dgxspark-dual
+
 .aws:
   rules:
     - if: $RUN_ON_AWS == "1"

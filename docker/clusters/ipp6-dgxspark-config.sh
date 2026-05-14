@@ -96,6 +96,11 @@ function get_mpi_params() {
 function configure_test_env() {
     export NCCL_DEBUG=WARN
     export UCX_NET_DEVICES=$DGX_NCCL_SOCKET_IFNAME
-    export NCCL_SOCKET_IFNAME=$DGX_NCCL_SOCKET_IFNAME
+    export UCX_TLS=tcp
+    export NCCL_IB_HCA="=rocep1s0f0"
+    export OMPI_MCA_rmaps_oversubscribe=1
+    export OMPI_MCA_rmaps_binding_policy=none
+    export OMPI_MCA_hwloc_base_binding_policy=none
+    export OMPI_MCA_btl="tcp,self"
     export OMPI_MCA_btl_tcp_if_include=$DGX_NCCL_SOCKET_IFNAME
 }
