@@ -204,9 +204,9 @@ cudaMemcpyAsync(segmentWindowsDev, segmentWindowsHost, ...);
 
 #### Changes to put (assume no signal)
 
-srcWindow and dstWindow can be from two different registrations and have different number of segments. First, the offset must be appropriately translated into the start and end segments for each window, with their sizes. After that, they must be transferred appropriately. 
+srcWindow and dstWindow can be from two different registrations and have different number of segments. First, the offset must be appropriately translated into the start and end segments for each window, with their sizes. After that, they must be transferred appropriately.
 
-Overall idea : Take the minimum remaining segment size between windows, do a put and loop until all the data is transferred. 
+Overall idea : Take the minimum remaining segment size between windows, do a put and loop until all the data is transferred.
 Take the example below. Assume that x is the total size of the message, srcWindow has two segments, and dstWindow has 3 segments.
 Put : [0.5x, 0.5x] -> [0.2x, 0.6x, 0.2x]
 There is a local key (for src segments) and remote key (for dst segments). The puts are from srcWindow to dstWindow.
@@ -344,7 +344,7 @@ A GIN signal must guarantee that all prior puts are visible/committed to memory.
 The sender must perform three operations for the signal in the DirectNIC case (in the specified order):
 
 1. Signal to CPU buffer (or RDMA read from CPU buffer)
-2. IB atomic fence (Implicit for GDAKI), or another signal (atomic) to GPU buffer in the case of proxy since there's no fence API defined there.  
+2. IB atomic fence (Implicit for GDAKI), or another signal (atomic) to GPU buffer in the case of proxy since there's no fence API defined there.
 3. Signal to GPU buffer
 
 #### Testing

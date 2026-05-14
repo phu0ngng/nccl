@@ -21,7 +21,7 @@ operations without kernel preemption or CPU proxy involvement. The existing GDAK
 targets DOCA GPUNetIO (InfiniBand Verbs), while the CPU Proxy backend routes GFDs through a
 CPU-side proxy thread. GPI provides a third, GPU-NIC centric path that posts compact
 GPU Freindly Descriptors (GFDs) to a shared MMIO ring queue that is consumed by the NIC
-HW (DPA), Providin glow latency and zero occupancy impact. 
+HW (DPA), Providin glow latency and zero occupancy impact.
 
 ### NVbugs / Jira Tickets
 https://nvbugspro.nvidia.com/bug/5669180
@@ -42,12 +42,12 @@ Resource-sharing granularity is configurable at construction time via `ncclGinRe
 
 ### Assumptions, constraints and dependencies
 
-- GPI backend works only with SPCX NCCLNet Plugin. 
+- GPI backend works only with SPCX NCCLNet Plugin.
 
 
 ### Use Cases
 
-- GPI is just a new backend for GIN, any user of GIN can take advnatag eof loa-latency GPI interface 
+- GPI is just a new backend for GIN, any user of GIN can take advnatag eof loa-latency GPI interface
 - Custom device kernels (DeepEP, DeepSeek-style MoE dispatch/combine) that need to issue
   network PUT/GET operations from arbitrary GPU threads without CPU involvement.
 - Symmetric collective kernels (`AllGather_GinHier`, `ReduceScatter_GinHier`) that need low-
@@ -58,9 +58,9 @@ Resource-sharing granularity is configurable at construction time via `ncclGinRe
 ### Platform Requirements
 
 GPI-capable NIC with GPU-accessible MMIO ring queue. CUDA toolkit ≥ 12.2. SM ≥ 7.0 for basic
-operation; 
-- GPI reuires NV NICs CX8+ 
-- GPI requires that the PeerMemOverwite or coherent systems 
+operation;
+- GPI reuires NV NICs CX8+
+- GPI requires that the PeerMemOverwite or coherent systems
 
 
 
@@ -373,7 +373,7 @@ equivalent operations.
 
 - latency of putSIgnal (INC) is 50% lower than GDAKI path Bus bandwidth (GB/s)
 - NCCL_EP and vLLM shows up to 8% performance compared to GDAKI and NVSHMEM
-- zero impact on occupancy for fused kernels   
+- zero impact on occupancy for fused kernels
 
 #### Results
 

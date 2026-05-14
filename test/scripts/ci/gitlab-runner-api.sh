@@ -47,7 +47,7 @@ run_device_api_test(){
         run_command "device_apitest_gin_gpi" "$RUN_MODE" 1 "--oversubscribe" "NCCL_GIN_TYPE=4 NCCL_NET_PLUGIN=$SPCX_PLUGIN" "$NCCL_HOME/test/apitest/device_api/device_api_test --gtest_filter=-*ReduceCopy*:Test/GinGet_test.get/2GB:Test/GinGet_test.get_with_flush/2GB" ""
       fi
       run_command "device_apitest_gin_default" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/apitest/device_api/device_api_test --gtest_filter=-*ReduceCopy*" ""
-      
+
     else
       echo -e "Disabled Api TESTS device api test\n\n"
     fi
