@@ -78,7 +78,7 @@ class CUstream:
 class FakeStream:
     """Mock for cuda.core.Stream.
 
-    Satisfies both Stream interface (.handle returns CUstream) and IsStreamT protocol (__cuda_stream__).
+    Satisfies both Stream interface (.handle returns CUstream) and IsStreamType protocol (__cuda_stream__).
     """
     def __init__(self, handle: int):
         self._handle_int = handle
@@ -94,7 +94,7 @@ class FakeStream:
 
 
 class StreamProtoGood:
-    """Valid implementation of IsStreamT protocol."""
+    """Valid implementation of IsStreamType protocol."""
     def __init__(self, handle: int):
         self._h = handle
     def __cuda_stream__(self):
@@ -102,13 +102,13 @@ class StreamProtoGood:
 
 
 class StreamProtoBadTuple:
-    """Invalid IsStreamT: __cuda_stream__ returns wrong type."""
+    """Invalid IsStreamType: __cuda_stream__ returns wrong type."""
     def __cuda_stream__(self):
         return 123
 
 
 class StreamProtoNotCallable:
-    """Invalid IsStreamT: __cuda_stream__ is not callable."""
+    """Invalid IsStreamType: __cuda_stream__ is not callable."""
     __cuda_stream__ = 5
 
 
