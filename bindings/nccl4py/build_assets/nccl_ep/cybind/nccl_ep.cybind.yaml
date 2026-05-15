@@ -6,8 +6,8 @@ nccl_ep:
     headers:
     - nccl_ep.h
     patterns:
-      function: (^nccl)([A-Z].*)
-      type: (^nccl)([A-Z][A-Za-z_].*)_t$
+      function: (^ncclEp)([A-Z].*)
+      type: (^nccl)(Ep[A-Z][A-Za-z_]*|NDTensor|Result|DataType|Comm|Window)_t$
     need_cuda: true
     need_driver: false
     support_win: false
