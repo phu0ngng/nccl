@@ -57,7 +57,8 @@ DEPFLAGS = -MMD -MP
 # Source files for library
 HOST_SRC := nccl_ep.cc
 DEVICE_SRC := device/low_latency.cu \
-              device/hybridep_adapter.cu
+              device/hybridep_adapter.cu \
+              device/indirect_memcpy.cu
 HOST_SRC += device/jit/jit_utils.cc \
             device/jit/jit_cache.cc \
             device/jit/nvcc_compiler.cc \

@@ -24,6 +24,7 @@
 // HT (High Throughput) includes
 #include "device/hybridep_adapter.cuh"
 #include "device/hybridep_configs.cuh"
+#include "device/indirect_memcpy.cuh"
 
 // Internal definition of the opaque ncclNDTensor type
 struct ncclNDTensor {
@@ -2561,39 +2562,21 @@ ncclResult_t ncclEpDispatch(
 
         const unsigned int max_recv_tokens = static_cast<unsigned int>(handle->group->max_recv_tokens);
 
-        // Pick the staging→user copy size based on stream-capture state:
-        //   - Capturing (CUDA Graph): copy the full caller-allocated bound
-        //     (max_recv_tokens). No host sync, so the call records cleanly.
-        //     The caller must size recv_x (and recv_scales) >= max_recv_tokens.
-        //   - Not capturing: blocking D2H readback of the actual recv-token
-        //     total and copy only that many rows, keeping bandwidth cost
-        //     proportional to real traffic.
-        cudaStreamCaptureStatus capture_status = cudaStreamCaptureStatusNone;
-        CUDA_CHECK(cudaStreamIsCapturing(stream, &capture_status));
-        const bool is_capturing = (capture_status == cudaStreamCaptureStatusActive);
-        unsigned int actual_recv_tokens = 0;
-        if (!is_capturing) {
-            CUDA_CHECK(cudaMemcpy(&actual_recv_tokens,
-                                  handle->hybridep.num_tokens_for_experts,
-                                  sizeof(actual_recv_tokens),
-                                  cudaMemcpyDeviceToHost));
-            assert(actual_recv_tokens <= max_recv_tokens);
-        }
-        const unsigned int recv_copy_rows = is_capturing ? max_recv_tokens : actual_recv_tokens;
-
-        /* ===== Copy intranode staging → caller outputs ===== */
-        // External-window outputs are written directly by the kernel; regular tensors
-        // need a D2D copy from the shared intranode staging buffers.
+        // Staging→user copy: indirect TMA reads num_tokens_for_experts on-device.
         assert(recv_x->ndim == 2 && tensor_is_contiguous(recv_x));
         if (!recv_x_uses_external_window) {
-            if (recv_x->sizes[0] < recv_copy_rows) {
+            if (recv_x->sizes[0] < max_recv_tokens) {
                 return ncclInvalidArgument;
             }
-            size_t copy_size = static_cast<size_t>(recv_copy_rows) * recv_x->sizes[1] * ncclTypeSize(recv_x->datatype);
-            CUDA_CHECK(cudaMemcpyAsync(recv_x->data,
+            const int row_bytes_x = static_cast<int>(
+                recv_x->sizes[1] * ncclTypeSize(recv_x->datatype));
+            CUDA_CHECK(nccl_ep::indirect_memcpy::launch_indirect_memcpy_tma(
+                recv_x->data,
                 group->ht_buffers.dispatch_expert_output_token_buffer_ptrs[group->lsa_rank],
-                copy_size,
-                cudaMemcpyDeviceToDevice,
+                handle->hybridep.num_tokens_for_experts,
+                static_cast<int>(max_recv_tokens),
+                row_bytes_x,
+                static_cast<int>(group->max_num_sms),
                 stream));
         }
 
@@ -2658,18 +2641,23 @@ ncclResult_t ncclEpDispatch(
                 stream);
         }
 
-        // FP8 scales output (async D2D, sized by caller).
+        // FP8 scales output via the same indirect TMA memcpy.
         if (use_fp8) {
             assert(recv_scales->ndim == 2 && tensor_is_contiguous(recv_scales));
             if (!recv_scales_uses_external_window) {
-                if (recv_scales->sizes[0] < recv_copy_rows) {
+                if (recv_scales->sizes[0] < max_recv_tokens) {
                     return ncclInvalidArgument;
                 }
-                size_t copy_size = static_cast<size_t>(recv_copy_rows) * recv_scales->sizes[1] * ncclTypeSize(recv_scales->datatype);
-                CUDA_CHECK(cudaMemcpyAsync(recv_scales->data,
+                const size_t row_bytes_s =
+                    recv_scales->sizes[1] * ncclTypeSize(recv_scales->datatype);
+                assert((row_bytes_s & 0xF) == 0 && "FP8 scales row bytes must be 16B-aligned");
+                CUDA_CHECK(nccl_ep::indirect_memcpy::launch_indirect_memcpy_tma(
+                    recv_scales->data,
                     group->ht_buffers.dispatch_expert_output_scaling_factor_buffer_ptrs[group->lsa_rank],
-                    copy_size,
-                    cudaMemcpyDeviceToDevice,
+                    handle->hybridep.num_tokens_for_experts,
+                    static_cast<int>(max_recv_tokens),
+                    static_cast<int>(row_bytes_s),
+                    static_cast<int>(group->max_num_sms),
                     stream));
             }
         }
@@ -2938,15 +2926,19 @@ ncclResult_t ncclEpCombine(
         }
 
         /* ===== Copy input to IPC staging buffers ===== */
-        // Expert MLP output needs to be in IPC buffer so other ranks can read it
+        // Indirect TMA reads num_tokens_for_experts (from the prior dispatch)
+        // and copies only the valid rows; peers read those rows via the dispatch routing.
         const bool combine_x_uses_external_window = tensorUsesExternalWindow(group, x);
         if (!combine_x_uses_external_window) {
-            size_t token_copy_size = static_cast<size_t>(num_tokens) * hidden * ncclTypeSize(x->datatype);
-            CUDA_CHECK(cudaMemcpyAsync(
+            const int row_bytes_t = static_cast<int>(
+                static_cast<size_t>(hidden) * ncclTypeSize(x->datatype));
+            CUDA_CHECK(nccl_ep::indirect_memcpy::launch_indirect_memcpy_tma(
                 group->ht_buffers.expert_input_token,
                 x->data,
-                token_copy_size,
-                cudaMemcpyDeviceToDevice,
+                handle->hybridep.num_tokens_for_experts,
+                num_tokens,
+                row_bytes_t,
+                static_cast<int>(group->max_num_sms),
                 stream));
         }
 
