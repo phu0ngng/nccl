@@ -281,7 +281,7 @@ typedef struct {
     ncclEpLayout_t layout;
     unsigned int use_fp8;  // enable FP8 for dispatch (0 = false, non-zero = true; default: 0)
     // HT expert-major only: per-expert zone alignment in tokens (pow2; 0/1 = no padding).
-    // Padded slots are zero-filled by dispatch.
+    // Padded slots are zero-filled by dispatch. Empty experts are never padded.
     size_t dispatch_output_per_expert_alignment;
 } ncclEpHandleConfig_t;
 

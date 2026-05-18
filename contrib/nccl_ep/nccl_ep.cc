@@ -1877,12 +1877,14 @@ ncclResult_t ncclEpInitHandle(
     assert(ep_group->config.num_experts > 0);
     assert(ep_group->config.num_experts % ep_group->nRanks == 0);
 
-    // Validate EM padding alignment up-front (pow2 required) before any allocation.
+    // Validate EM padding alignment (pow2; 0/1 = no padding) before any allocation.
     const bool is_ht_em = ep_group->config.algorithm != NCCL_EP_ALGO_LOW_LATENCY &&
                           layout == NCCL_EP_LAYOUT_EXPERT_MAJOR;
-    const size_t em_align = (is_ht_em && config && config->dispatch_output_per_expert_alignment > 1)
-                            ? config->dispatch_output_per_expert_alignment : 1;
-    assert((em_align & (em_align - 1)) == 0 && "dispatch_output_per_expert_alignment must be a power of two");
+    const size_t pad_alignment =
+        (config && config->dispatch_output_per_expert_alignment > 1)
+            ? config->dispatch_output_per_expert_alignment : 0;
+    assert((pad_alignment == 0 || (pad_alignment & (pad_alignment - 1)) == 0) &&
+           "dispatch_output_per_expert_alignment must be a power of two");
 
     *out_handle = new ncclEpHandle();
     ncclEpHandle_t handle = *out_handle;
@@ -1896,7 +1898,7 @@ ncclResult_t ncclEpInitHandle(
     } else {
         res = ht_init_handle(handle, ep_group, handle_mem, num_topk);
         if (res == ncclSuccess && is_ht_em) {
-            handle->hybridep.dispatch_output_per_expert_alignment = em_align;
+            handle->hybridep.dispatch_output_per_expert_alignment = pad_alignment;
         }
     }
 
@@ -2070,6 +2072,7 @@ ncclResult_t ncclEpUpdateHandle(
         nNodes,
         n_ranks_per_node,
         experts_per_rank,
+        expert_major,
         expert_major ? handle->hybridep.expert_token_offsets : nullptr,
         padded_out_counts,
         out_offsets,
